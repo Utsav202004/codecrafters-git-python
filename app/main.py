@@ -20,9 +20,7 @@ class Git:
             return
         
         if args[0] == '-p':
-            if not args[1]:
-                print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
-            else:
+            try:
                 hash = args[1]
                 object_path = os.path.join(self.git_dir, 'objects', hash[:2], hash[2:])
 
@@ -33,6 +31,9 @@ class Git:
                 if content:
                     header, _ , body = content.partition(b'\x00')
                     print(body.decode('utf-8'), end='')
+            except Exception as e:
+                print(f"Error occured: {e}", file=sys.stderr)
+
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
@@ -53,28 +54,28 @@ class Git:
 
         except Exception as e:
             print(f"An error occured: {e}", file=sys.stderr)
-            return
+            return        
         
+        return decompressed_data
 
 def main():
 
-    git = Git()
+    if len(sys.argv) < 2:
+        print(f"Usage: <command> [args]", file=sys.stderr)
+        sys.exit(1)
 
-    if len(sys.argv) == 1:
-        print(f"pass argument with the function", file=sys.stderr)
-    elif len(sys.argv) == 2:
-        command = sys.argv[1]
-    else:
-        command = sys.argv[1]
-        arguments = sys.argv[2:]
+    command = sys.argv[1]
+    arguments = sys.argv[2:]
+
+    git = Git()
 
     if command == "init":
         git.init()
     elif command == "cat-file":
         git.cat_file(arguments)
     else:
-        raise RuntimeError(f"Unknown command #{command}")
-
+        print(f"Unknown command: {command}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
