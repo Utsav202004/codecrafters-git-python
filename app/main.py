@@ -6,57 +6,52 @@ class Git:
     def __init__(self, git_dir ='.git'):
         self.git_dir = git_dir
 
-    def init(self):
+    def init(self): # Initialising a new Git repo
+        # creating necessary directories
         os.makedirs(os.path.join(self.git_dir, 'objects'), exist_ok=True)
-        os.makedirs(os.path.join(self.git_dir, 'refs'), exist_ok=True)
+        os.makedirs(os.path.join(self.git_dir, 'refs', 'heads'), exist_ok=True)
 
+        # writing to head file
         with open(".git/HEAD", 'w') as f:
             f.write("ref: refs/heads/main\n")
+
         print("Initialized git directory")
 
-    def cat_file(self, args):
-        if not os.path.exists(os.path.join(self.git_dir, 'objects')):
-            print("Git directory not initialised yet", file=sys.stderr)
-            return
+    def cat_file(self, args): # implementing git cat-file <flag> function
+        if len(args) < 2:
+            print(f"Usage: cat-file <flag> <hash>", file=sys.stderr)
+            sys.exit(1)
+
+        hash_str = args[1]
+
+        object_path = os.path.join(self.git_dir, 'objects', hash_str[:2], hash_str[2:])
+
+        flag = args[0]
         
-        if args[0] == '-p':
-            try:
-                hash = args[1]
-                object_path = os.path.join(self.git_dir, 'objects', hash[:2], hash[2:])
+        if flag == '-p':
+            content = self._get_object_content(object_path)
 
-                content = self.decompress_file(object_path)
-
-                # now this content has the object type and the file size after decompression
-                # we need to parse this as well
-                if content:
-                    header, _ , body = content.partition(b'\x00')
-                    print(body.decode('utf-8'), end='')
-            except Exception as e:
-                print(f"Error occured: {e}", file=sys.stderr)
+            # now this content has the object type and the file size after decompression
+            # we need to parse this as well
+            if content:
+                header, _ , body = content.partition(b'\x00')
+                print(body.decode('utf-8'), end='')
 
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
-    def decompress_file(self, file_path):
+    def _get_object_content(self, file_path):
+        # a helper method to read and decompress a zlib-compressed object file
         if not os.path.exists(file_path):
-            print(f"File not found at {file_path}", file=sys.stderr)
-            return
+            return None
         
         try:
             with open(file_path, 'rb') as f:
                 compressed_data = f.read()
+            return zlib.decompress(compressed_data)
 
-            decompressed_data = zlib.decompress(compressed_data)
-
-        except zlib.error as e:
-            print(f"Zlib decompression error: {e}", file=sys.stderr)
-            return 
-
-        except Exception as e:
-            print(f"An error occured: {e}", file=sys.stderr)
-            return        
-        
-        return decompressed_data
+        except (zlib.error, Exception):
+            return None
 
 def main():
 
