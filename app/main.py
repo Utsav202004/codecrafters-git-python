@@ -71,6 +71,8 @@ class Git:
         except Exception as e:
             print(f"Error while writing to file: {e}", file=sys.stderr)
 
+        print(sha1_result)
+
     def _compute_sha1_hash(self, input_string): # dedicated function to create sha1 hash for a string
         sha1_hash = hashlib.sha1()
 
