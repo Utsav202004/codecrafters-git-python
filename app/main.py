@@ -42,7 +42,7 @@ class Git:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
     def hash_object(self, args): # implementing git hash-object flag file-name
-        if len(args) < 2 | args[0] != '-w':
+        if len(args) < 2 or args[0] != '-w':
             print(f"Usage: hash-object -w file-name", file=sys.stderr)
 
         if not os.path.exists(args[1]):
