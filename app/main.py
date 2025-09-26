@@ -66,7 +66,7 @@ class Git:
         compressed_data = zlib.compress(file_content.encode('utf-8')) 
 
         try:
-            with open(path_to_object, 'w') as f:
+            with open(path_to_object, 'wb') as f:
                 f.write(compressed_data)
         except Exception as e:
             print(f"Error while writing to file: {e}", file=sys.stderr)
