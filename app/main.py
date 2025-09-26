@@ -63,7 +63,7 @@ class Git:
 
         path_to_object = os.path.join(path_to_object_dir, sha1_result[2:])
    
-        compressed_data = zlib.compress(file_content.encode('utf-8')) 
+        compressed_data = zlib.compress(file_content.encode('utf-8'), level=9) 
 
         try:
             with open(path_to_object, 'wb') as f:
