@@ -62,8 +62,12 @@ class Git:
         os.makedirs(path_to_object_dir, exist_ok=True)
 
         path_to_object = os.path.join(path_to_object_dir, sha1_result[2:])
+
+        # now we need to add header to the data before compression
+        content_size = os.path.getsize(args[1])
+        content_to_compress = 'blob ' + str(content_size) + '\x00' + file_content
    
-        compressed_data = zlib.compress(file_content.encode('utf-8'), level=9) 
+        compressed_data = zlib.compress(content_to_compress.encode('utf-8'), level=9) 
 
         try:
             with open(path_to_object, 'wb') as f:
