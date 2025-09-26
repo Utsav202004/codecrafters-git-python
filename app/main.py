@@ -59,9 +59,9 @@ class Git:
             sys.exit(1)
 
         path_to_object_dir = os.path.join(self.git_dir, 'objects', sha1_result[:2])
-        os.makedirs(path_to_object_dir)
+        os.makedirs(path_to_object_dir, exist_ok=True)
 
-        path_to_object = os.path.join(self.git_dir, 'onjects', sha1_result[:2], sha1_result[2:])
+        path_to_object = os.path.join(path_to_object_dir, sha1_result[2:])
    
         compressed_data = zlib.compress(file_content.encode('utf-8')) 
 
