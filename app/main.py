@@ -1,6 +1,7 @@
 import sys
 import os
 import zlib
+import hashlib
 
 class Git:
     def __init__(self, git_dir ='.git'):
@@ -40,6 +41,43 @@ class Git:
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
+    def hash_object(self, args): # implementing git hash-object flag file-name
+        if len(args) < 2 | args[0] != '-w':
+            print(f"Usage: hash-object -w file-name", file=sys.stderr)
+
+        if not os.path.exists(args[1]):
+            print(f"fatal: file does not exist.")
+
+        try:
+            with open(args[1], 'r') as f:
+                file_content = f.read()
+
+            sha1_result = self._compute_sha1_hash(file_content)
+
+        except Exception as e:
+            print(f"Error occured: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        path_to_object_dir = os.path.join(self.git_dir, 'objects', sha1_result[:2])
+        os.makedirs(path_to_object_dir)
+
+        path_to_object = os.path.join(self.git_dir, 'onjects', sha1_result[:2], sha1_result[2:])
+   
+        compressed_data = zlib.compress(file_content) 
+
+        try:
+            with open(path_to_object, 'w') as f:
+                f.write(compressed_data)
+        except Exception as e:
+            print(f"Error while writing to file: {e}", file=sys.stderr)
+
+    def _compute_sha1_hash(self, input_string): # dedicated function to create sha1 hash for a string
+        sha1_hash = hashlib.sha1()
+
+        sha1_hash.update(input_string.encode('utf-8'))
+
+        return sha1_hash.hexdigest()
+
     def _get_object_content(self, file_path):
         # a helper method to read and decompress a zlib-compressed object file
         if not os.path.exists(file_path):
@@ -68,6 +106,8 @@ def main():
         git.init()
     elif command == "cat-file":
         git.cat_file(arguments)
+    elif command == "hash-object":
+        git.hash_object(arguments)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
