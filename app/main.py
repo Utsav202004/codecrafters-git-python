@@ -48,11 +48,16 @@ class Git:
         if not os.path.exists(args[1]):
             print(f"fatal: file does not exist.")
 
+
         try:
             with open(args[1], 'r') as f:
                 file_content = f.read()
 
-            sha1_result = self._compute_sha1_hash(file_content)
+            # now we need to add header to the data before calculating the hash 
+            content_size = os.path.getsize(args[1])
+            content_to_hash = 'blob ' + str(content_size) + '\x00' + file_content
+
+            sha1_result = self._compute_sha1_hash(content_to_hash)
 
         except Exception as e:
             print(f"Error occured: {e}", file=sys.stderr)
@@ -62,12 +67,8 @@ class Git:
         os.makedirs(path_to_object_dir, exist_ok=True)
 
         path_to_object = os.path.join(path_to_object_dir, sha1_result[2:])
-
-        # now we need to add header to the data before compression
-        content_size = os.path.getsize(args[1])
-        content_to_compress = 'blob ' + str(content_size) + '\x00' + file_content
    
-        compressed_data = zlib.compress(content_to_compress.encode('utf-8'), level=9) 
+        compressed_data = zlib.compress(content_to_hash.encode('utf-8'), level=9) 
 
         try:
             with open(path_to_object, 'wb') as f:
