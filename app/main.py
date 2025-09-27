@@ -111,15 +111,15 @@ class Git:
         if content_of_tree_object is None:
             print(f"fatal: Not a valid object name: {hash_of_tree_object}", file=sys.stderr)
 
-        header , _ , body = content_of_tree_object.partition('\x00')
-
-        split_body = ' '.split(body)
+        header , _ , body = content_of_tree_object.partition(b'\x00')
+        space_byte = b'\x20'
+        split_body = space_byte.split(body)
 
         for element in split_body:
             if len(element) < 20:
                 continue
 
-            print(('\x00'.split(element))[0])
+            print((b'\x00'.split(element))[0])
 
 
     # -------- HELPER FUNCTIONS --------
