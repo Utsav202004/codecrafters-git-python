@@ -13,6 +13,8 @@ class Git:
     def __init__(self, git_dir ='.git'):
         self.git_dir = git_dir
 
+
+
     # -------- INITIALISING GIT ---------
 
     def init(self): 
@@ -27,9 +29,10 @@ class Git:
         print("Initialized git directory")
 
 
+
     # -------- GIT COMMANDS --------
 
-    # Command : git cat-file <flag> <hash-of-the-file>
+    # COMMAND : git cat-file <flag> <hash-of-the-file>
     def cat_file(self, args): 
         if len(args) < 2:
             print(f"Usage: cat-file <flag> <hash>", file=sys.stderr)
@@ -54,7 +57,7 @@ class Git:
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
-    # Command: git hash-object <flag> <file-name>
+    # COMMAND: git hash-object <flag> <file-name>
     def hash_object(self, args):
         if len(args) < 2 or args[0] != '-w':
             print(f"Usage: hash-object -w file-name", file=sys.stderr)
@@ -94,6 +97,31 @@ class Git:
             print(f"Error while writing to file: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Command - git ls-tree <flag> <tree-sha>
+    def ls_tree(self, args):
+        if len(args) < 2 or args[0] != "--name-only":
+            print(f"Usage: ls-tree --name-only <sha1-of-tree>")
+            sys.exit(1)
+
+        # given sha - we know path - decompress - work on --name-only - parse the names 
+        hash_of_tree_object = args[1]
+        path_to_tree_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, hash_of_tree_object[:2], hash_of_tree_object[2:])
+        content_of_tree_object = self._get_object_content(path_to_tree_object)
+
+        if content_of_tree_object is None:
+            print(f"fatal: Not a valid object name: {hash_of_tree_object}", file=sys.stderr)
+
+        header , _ , body = content_of_tree_object.partition('\x00')
+
+        split_body = ' '.split(body)
+
+        for element in split_body:
+            if len(element) < 20:
+                continue
+
+            print(('\x00'.split(element))[0])
+
+
     # -------- HELPER FUNCTIONS --------
 
     # Reading and Decompress a zlib-compressed object file
@@ -117,6 +145,8 @@ class Git:
 
         return sha1_hash.hexdigest()
 
+
+
 # -------- MAIN FUNCTION --------
 
 def main():
@@ -138,6 +168,8 @@ def main():
         git.cat_file(arguments)
     elif command == "hash-object":
         git.hash_object(arguments)
+    elif command == "ls-tree":
+        git.ls_tree(arguments)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
