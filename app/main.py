@@ -119,7 +119,7 @@ class Git:
             if len(element) < 20:
                 continue
 
-            print((b'\x00'.split(element))[0])
+            file_name , _ , sha1_and_mode = element.partition(b'\x00')
 
 
     # -------- HELPER FUNCTIONS --------
