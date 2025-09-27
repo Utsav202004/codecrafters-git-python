@@ -103,6 +103,7 @@ class Git:
 
         if content_of_tree_object is None:
             print(f"fatal: Not a valid object name: {hash_of_tree_object}", file=sys.stderr)
+            sys.exit(1)
 
         header , _ , body = content_of_tree_object.partition(b'\x00')
 
@@ -133,10 +134,7 @@ class Git:
 
             # third component - sha1 hash
             sha1_start = null_index + 1
-            i = sha1_start + 20
-
             sha1 = tree_entries[sha1_start: sha1_start + 20]
-            i = sha1_start + 20
 
             if args.name_only:
                 # currently we need to print only the file name
@@ -144,12 +142,12 @@ class Git:
 
             else:
                 mode_str = mode.decode('ascii')
-                if mode_str == '100644' or mode_str == '100755':
+                if mode_str == '100644' or mode_str == '100755' or mode_str == '1200000' or mode_str == '160000':
                     type = 'blob'
                 elif mode_str == '040000':
                     type = 'tree'
                 else:
-                    type = 'blob' # cases of symlinks and other cases
+                    type = 'unknown' # cases of symlinks and other cases
 
                 sha1_hex_string = sha1.hex()
 
@@ -157,6 +155,7 @@ class Git:
 
                 print(to_print)
 
+            i = sha1_start + 20
 
 
     # -------- HELPER FUNCTIONS --------
@@ -224,14 +223,14 @@ def main():
     hash_object_parser.add_argument('-w', action='store_true', help="Storing the object to Git database")
 
     # filename
-    hash_object_parser.add_argument('file_path', required=True, help="file path to caculate the sha1-hash of")
+    hash_object_parser.add_argument('file_path', help="file path to caculate the sha1-hash of")
     hash_object_parser.set_defaults(func=git.hash_object)
 
     # -- 4. Subcommand - Git ls-tree <flag> <tree-sha1-hash> --
     ls_tree_parser = subparsers.add_parser('ls-tree', help='list the content of a tree object')
 
     # required tree hash
-    ls_tree_parser.add_argument("tree_hash", required=True, help='SHA-1 hash of the tree object to read')
+    ls_tree_parser.add_argument("tree_hash", help='SHA-1 hash of the tree object to read')
 
     # optional flag - --name-only
     ls_tree_parser.add_argument('--name-only', dest='name_only', action='store_true', help='Only print the names of the item')
