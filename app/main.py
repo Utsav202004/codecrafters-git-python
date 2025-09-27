@@ -11,7 +11,7 @@ class Git:
     HEAD_FILE = 'HEAD'
     HEADS_DIR = 'heads'
 
-    def _init__(self, git_dir = '.git'):
+    def __init__(self, git_dir = '.git'):
         self.git_dir = git_dir
 
 
@@ -118,12 +118,10 @@ class Git:
         while i < len(tree_entries):
 
             # first component - mode
-            mode_start = i
-            space_index = tree_entries.find(b'\x20', mode_start)
+            space_index = tree_entries.find(b'\x20', i)
             if space_index == -1: break # should not happend in a valid tree
-            mode_end = space_index - 1
 
-            mode = tree_entries[mode_start: mode_end+1]
+            mode = tree_entries[i : space_index]
 
             # second Component - filename
             filename_start = space_index + 1
@@ -135,27 +133,29 @@ class Git:
 
             # third component - sha1 hash
             sha1_start = null_index + 1
-            sha1_end = sha1_start + 19
+            i = sha1_start + 20
 
-            sha1 = tree_entries[sha1_start: sha1_end + 1]
+            sha1 = tree_entries[sha1_start: sha1_start + 20]
+            i = sha1_start + 20
 
             if args.name_only:
                 # currently we need to print only the file name
                 print(filename.decode('utf-8'))
 
             else:
-                if mode == b'100644' or b'100755':
+                mode_str = mode.decode('ascii')
+                if mode_str == '100644' or mode_str == '100755':
                     type = 'blob'
-                else:
+                elif mode_str == '040000':
                     type = 'tree'
+                else:
+                    type = 'blob' # cases of symlinks and other cases
 
                 sha1_hex_string = sha1.hex()
 
-                to_print = mode.decode('utf-8') + '\t' + type + '\t' + sha1_hex_string.decode('utf-8') + '\t' + filename.decode('utf-8')
+                to_print = mode.decode('utf-8') + '\t' + type + '\t' + sha1_hex_string + '\t' + filename.decode('utf-8')
 
                 print(to_print)
-
-            i = sha1_end + 1
 
 
 
@@ -186,6 +186,8 @@ class Git:
 
 def main():
 
+    git = Git()
+
     # --------- ADDING A PARSER ---------
   
     parser = argparse.ArgumentParser(description="Basic Git Implementation.")
@@ -208,8 +210,8 @@ def main():
     # adding mutually exclusive flags support
     group = cat_file_parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-p', action='store_true', help='Pretty print the contents of the object')
-    group.add_argument('-t', action='store-true', help='print the type of object')
-    group.add_argument('-s', action='store-true', help="print byte size of the object")
+    group.add_argument('-t', action='store_true', help='print the type of object')
+    group.add_argument('-s', action='store_true', help="print byte size of the object")
     
     # parsing the hash of object
     cat_file_parser.add_argument('object_hash', type=str, help="sha1-hash of the Git object to read")
@@ -219,7 +221,7 @@ def main():
     hash_object_parser = subparsers.add_parser('hash-object', help="Computing the sha-1 hash of git object, and optionally storing the objec to Git database")
 
     # adding the optional flag
-    hash_object_parser.add_argument('-w', action='store-true', help="Storing the object to Git database")
+    hash_object_parser.add_argument('-w', action='store_true', help="Storing the object to Git database")
 
     # filename
     hash_object_parser.add_argument('file_path', required=True, help="file path to caculate the sha1-hash of")
@@ -232,13 +234,16 @@ def main():
     ls_tree_parser.add_argument("tree_hash", required=True, help='SHA-1 hash of the tree object to read')
 
     # optional flag - --name-only
-    ls_tree_parser.add_argument('--name-only', dest='name_only', action='store-true', help='Only print the names of the item')
+    ls_tree_parser.add_argument('--name-only', dest='name_only', action='store_true', help='Only print the names of the item')
 
     ls_tree_parser.set_defaults(func = git.ls_tree)
 
     # -- 5. SubCommand -   --
 
-    git = Git()
+    # ---- PARSE and DISPATCH -----
+    args = parser.parse_args()
+    args.func(args)
+
 
 if __name__ == "__main__":
     main()
