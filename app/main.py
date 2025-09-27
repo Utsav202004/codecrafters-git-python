@@ -2,22 +2,23 @@ import sys
 import os
 import zlib
 import hashlib
+import argparse
 
 class Git:
-    # hard coding some name for reusability across class - ALL_CAPS is a convention for variable name for a class
+    # hard coding - reusability - ALL_CAPS - convention variable name
     OBJECTS_DIR = 'objects'
     REFS_DIR = 'refs'
     HEAD_FILE = 'HEAD'
     HEADS_DIR = 'heads'
 
-    def __init__(self, git_dir ='.git'):
+    def _init__(self, git_dir = '.git'):
         self.git_dir = git_dir
 
 
     # -------- GIT COMMANDS --------
 
-    # COMMAND : git init
-    def init(self): 
+    # -- 1. COMMAND : git init --
+    def init(self, args): 
         # creating necessary directories - objects and refs/heads
         os.makedirs(os.path.join(self.git_dir, Git.OBJECTS_DIR), exist_ok=True)
         os.makedirs(os.path.join(self.git_dir, Git.REFS_DIR, Git.HEADS_DIR), exist_ok=True)
@@ -28,44 +29,40 @@ class Git:
 
         print("Initialized git directory")
 
-    # COMMAND : git cat-file <flag> <hash-of-the-file>
+    # -- 2. COMMAND : git cat-file <flag> <hash-of-the-file> --
     def cat_file(self, args): 
-        if len(args) < 2:
-            print(f"Usage: cat-file <flag> <hash>", file=sys.stderr)
-            sys.exit(1)
-
-        flag = args[0]
-        hash_str = args[1]
+        hash_str = args.object_hash
         object_path = os.path.join(self.git_dir, Git.OBJECTS_DIR, hash_str[:2], hash_str[2:]) # the object associated with the given hash
         
         # Need content of file at the path - zlib decompression
         content = self._get_object_content(object_path)
 
-        # Content format - <object-type> <size>\x00<content>
+        # Content format - <object-type>\x20<size>\x00<content>
         if content is None:
             print(f"fatal: Not a valid object name {hash_str}", file=sys.stderr)
             sys.exit(1)
 
         header, _ , body = content.partition(b'\x00')
+        type, _ , size = header.partition(b'\x20')
             
-        if flag == '-p':
-            print(body.decode('utf-8'), end='') # content in byte format - converting to string format
+        if args.p:
+            print(body.decode('utf-8'), end='') # content byte -> string 
+        elif args.t:
+            print(type.decode('utf-8'), end='')
+        elif args.s:
+            print(size.decode('utf-8'), end='')
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
 
-    # COMMAND: git hash-object <flag> <file-name>
+    # -- 3. COMMAND: git hash-object <flag> <file-name> -- 
     def hash_object(self, args):
-        if len(args) < 2 or args[0] != '-w':
-            print(f"Usage: hash-object -w file-name", file=sys.stderr)
-            sys.exit(1)
-
-        if not os.path.exists(args[1]):
+        if not os.path.exists(args.file_path):
             print(f"fatal: file does not exist.")
             sys.exit(1)
 
-        # Need to : Read file -> Add header to file -> Calculate the sha1 hash -> compress file using zlib -> write to the objects/hash[:2] path
+        # Need to : Read file -> Add header -> Calculate sha1 hash -> compress with zlib -> write to Git database
         try:
-            with open(args[1], 'rb') as f:
+            with open(args.file_path, 'rb') as f:
                 file_content_bytes= f.read()
         except Exception as e:
             print(f"Error in reading the file: {e}", file=sys.stderr)
@@ -75,11 +72,14 @@ class Git:
         header_bytes = f"blob {file_content_size}\x00".encode('ascii')
         file_content_with_header = header_bytes + file_content_bytes
         sha1_of_file = self._compute_sha1_hash(file_content_with_header)
-        compressed_data = zlib.compress(file_content_with_header, level=9) 
         
         # priting the hash to stdout
         print(sha1_of_file)
 
+        if not args.w:
+            return
+        
+        compressed_data = zlib.compress(file_content_with_header, level=9) 
         # making dir in object using the hash result
         path_new_object_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR , sha1_of_file[:2])
         os.makedirs(path_new_object_dir, exist_ok=True)
@@ -93,14 +93,11 @@ class Git:
             print(f"Error while writing to file: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Command - git ls-tree <flag> <tree-sha>
+    # -- 4. Command - git ls-tree <flag> <tree-sha> -- 
     def ls_tree(self, args):
-        if len(args) < 2 or args[0] != "--name-only":
-            print(f"Usage: ls-tree --name-only <sha1-of-tree>")
-            sys.exit(1)
 
         # given sha - we know path - decompress - work on --name-only - parse the names 
-        hash_of_tree_object = args[1]
+        hash_of_tree_object = args.tree_hash
         path_to_tree_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, hash_of_tree_object[:2], hash_of_tree_object[2:])
         content_of_tree_object = self._get_object_content(path_to_tree_object)
 
@@ -142,8 +139,21 @@ class Git:
 
             sha1 = tree_entries[sha1_start: sha1_end + 1]
 
-            # currently we need to print only the file name
-            print(filename.decode('utf-8'))
+            if args.name_only:
+                # currently we need to print only the file name
+                print(filename.decode('utf-8'))
+
+            else:
+                if mode == b'100644' or b'100755':
+                    type = 'blob'
+                else:
+                    type = 'tree'
+
+                sha1_hex_string = sha1.hex()
+
+                to_print = mode.decode('utf-8') + '\t' + type + '\t' + sha1_hex_string.decode('utf-8') + '\t' + filename.decode('utf-8')
+
+                print(to_print)
 
             i = sha1_end + 1
 
@@ -172,34 +182,63 @@ class Git:
 
         return sha1_hash.hexdigest()
 
-
-
-# -------- MAIN FUNCTION --------
+    
 
 def main():
 
-    # Exiting for the case when no command passed with the _.sh exectuion 
-    if len(sys.argv) < 2:
-        print(f"Usage: <command> [args]", file=sys.stderr)
-        sys.exit(1)
+    # --------- ADDING A PARSER ---------
+  
+    parser = argparse.ArgumentParser(description="Basic Git Implementation.")
 
-    command = sys.argv[1]
-    arguments = sys.argv[2:]
+    # ----- Setting up Subcommands ------
 
-    # Creating an object of the Git class
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        title="Avialable commands"
+    )
+
+    # -- 1. Subcommand - Git Init --
+    init_parser = subparsers.add_parser('init', help="initiliase a new Git repo")
+    init_parser.set_defaults(func=git.init)
+
+    # -- 2. Subcommand - Git cat-file <flag> <sha1-hash> --
+    cat_file_parser = subparsers.add_parser('cat-file', help="reading the content of a Git object")
+
+    # adding mutually exclusive flags support
+    group = cat_file_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-p', action='store_true', help='Pretty print the contents of the object')
+    group.add_argument('-t', action='store-true', help='print the type of object')
+    group.add_argument('-s', action='store-true', help="print byte size of the object")
+    
+    # parsing the hash of object
+    cat_file_parser.add_argument('object_hash', type=str, help="sha1-hash of the Git object to read")
+    cat_file_parser.set_defaults(func=git.cat_file)
+
+    # -- 3. Subcommand - Git hash-object <flag> <filename> --
+    hash_object_parser = subparsers.add_parser('hash-object', help="Computing the sha-1 hash of git object, and optionally storing the objec to Git database")
+
+    # adding the optional flag
+    hash_object_parser.add_argument('-w', action='store-true', help="Storing the object to Git database")
+
+    # filename
+    hash_object_parser.add_argument('file_path', required=True, help="file path to caculate the sha1-hash of")
+    hash_object_parser.set_defaults(func=git.hash_object)
+
+    # -- 4. Subcommand - Git ls-tree <flag> <tree-sha1-hash> --
+    ls_tree_parser = subparsers.add_parser('ls-tree', help='list the content of a tree object')
+
+    # required tree hash
+    ls_tree_parser.add_argument("tree_hash", required=True, help='SHA-1 hash of the tree object to read')
+
+    # optional flag - --name-only
+    ls_tree_parser.add_argument('--name-only', dest='name_only', action='store-true', help='Only print the names of the item')
+
+    ls_tree_parser.set_defaults(func = git.ls_tree)
+
+    # -- 5. SubCommand -   --
+
     git = Git()
-
-    if command == "init":
-        git.init()
-    elif command == "cat-file":
-        git.cat_file(arguments)
-    elif command == "hash-object":
-        git.hash_object(arguments)
-    elif command == "ls-tree":
-        git.ls_tree(arguments)
-    else:
-        print(f"Unknown command: {command}", file=sys.stderr)
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()
