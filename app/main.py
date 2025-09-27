@@ -112,14 +112,45 @@ class Git:
             print(f"fatal: Not a valid object name: {hash_of_tree_object}", file=sys.stderr)
 
         header , _ , body = content_of_tree_object.partition(b'\x00')
-        space_byte = b'\x20'
-        split_body = space_byte.split(body)
 
-        for element in split_body:
-            if len(element) < 20:
-                continue
+        if not header.startswith(b'tree '):
+            print(f"fatal: {hash_of_tree_object} is not a tree object", file=sys.stderr)
+            sys.exit(1)
 
-            file_name , _ , sha1_and_mode = element.partition(b'\x00')
+        # Parsing of each entry needed
+        tree_entries = body
+        i = 0
+
+        # format  - <mode>\x20<filename>\x00<sha1-hash>
+        while i < len(tree_entries):
+
+            # first component - mode
+            mode_start = i
+            space_index = tree_entries.find(b'\x20', mode_start)
+            if space_index == -1: break # should not happend in a valid tree
+            mode_end = space_index - 1
+
+            mode = tree_entries[mode_start: mode_end+1]
+
+            # second Component - filename
+            filename_start = space_index + 1
+            null_index = tree_entries.find(b'\x00', space_index)
+            if null_index == -1 : break # not a valid tree
+            filename_end = null_index - 1
+
+            filename = tree_entries[filename_start: filename_end + 1]
+
+            # third component - sha1 hash
+            sha1_start = null_index + 1
+            sha1_end = sha1_start + 19
+
+            sha1 = tree_entries[sha1_start: sha1_end + 1]
+
+            # currently we need to print only the file name
+            print(filename.decode('utf-8'))
+
+            i = sha1_end + 1
+
 
 
     # -------- HELPER FUNCTIONS --------
