@@ -14,9 +14,9 @@ class Git:
         self.git_dir = git_dir
 
 
+    # -------- GIT COMMANDS --------
 
-    # -------- INITIALISING GIT ---------
-
+    # COMMAND : git init
     def init(self): 
         # creating necessary directories - objects and refs/heads
         os.makedirs(os.path.join(self.git_dir, Git.OBJECTS_DIR), exist_ok=True)
@@ -27,10 +27,6 @@ class Git:
             f.write(f"ref: {os.path.join(Git.REFS_DIR, Git.HEADS_DIR)}/main\n")
 
         print("Initialized git directory")
-
-
-
-    # -------- GIT COMMANDS --------
 
     # COMMAND : git cat-file <flag> <hash-of-the-file>
     def cat_file(self, args): 
