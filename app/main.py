@@ -60,38 +60,10 @@ class Git:
             print(f"fatal: file does not exist.")
             sys.exit(1)
 
-        # Need to : Read file -> Add header -> Calculate sha1 hash -> compress with zlib -> write to Git database
-        try:
-            with open(args.file_path, 'rb') as f:
-                file_content_bytes= f.read()
-        except Exception as e:
-            print(f"Error in reading the file: {e}", file=sys.stderr)
-            sys.exit(1)
-
-        file_content_size = len(file_content_bytes)
-        header_bytes = f"blob {file_content_size}\x00".encode('ascii')
-        file_content_with_header = header_bytes + file_content_bytes
-        sha1_of_file = self._compute_sha1_hash(file_content_with_header)
+        sha1 = self._get_object_content(args.file_path, args.w)
         
-        # priting the hash to stdout
-        print(sha1_of_file)
+        print(sha1)
 
-        if not args.w:
-            return
-        
-        compressed_data = zlib.compress(file_content_with_header, level=9) 
-        # making dir in object using the hash result
-        path_new_object_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR , sha1_of_file[:2])
-        os.makedirs(path_new_object_dir, exist_ok=True)
-
-        # writing to the hash defined path
-        path_new_object = os.path.join(path_new_object_dir, sha1_of_file[2:])
-        try:
-            with open(path_new_object, 'wb') as f:
-                f.write(compressed_data)
-        except Exception as e:
-            print(f"Error while writing to file: {e}", file=sys.stderr)
-            sys.exit(1)
 
     # -- 4. Command - git ls-tree <flag> <tree-sha> -- 
     def ls_tree(self, args):
@@ -157,6 +129,60 @@ class Git:
 
             i = sha1_start + 20
 
+    # -- 5. SubCommand - git write-tree --
+    def write_tree(self, directory_path = './'):
+        tree_entries_str = b''
+        entries = []
+
+        # Iterating over the Dir
+        dir_path = directory_path
+
+        try:
+            contents = os.listdir(dir_path)
+
+            if not contents:
+                # empty directory
+                pass
+
+            for object in contents:
+                object_path = os.path.join(directory_path, object)
+                if os.path.isfile(object_path):
+                    # Need - sha1 hash(20 byte), mode, filename
+                    blob_sha1_hex = self._get_object_content(object_path, True)
+                    # Mode
+                    stat_info = os.stat(object_path)
+                    blob_mode = stat_info.st_mode
+                    
+                    entries.append(blob_mode.encode('utf-8') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_hex.encode('utf-8'))
+
+                elif os.path.isdir(object_path):
+                    sub_tree_sha_hex = self.write_tree(object_path)
+                    entries.append(b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + sub_tree_sha_hex.encode('utf-8'))
+
+            entries.sort()
+            for entry in entries:
+                tree_entries_str += entry
+            size_of_tree_object = len(tree_entries_str)
+            tree_object = b'tree ' + size_of_tree_object.encode('utf-8') + b'\x00' + tree_entries_str
+
+            tree_sha = self._compute_sha1_hash(tree_object)
+
+            path_to_tree_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, tree_sha[:2], tree_sha[2:])
+
+            try:
+                with open(path_to_tree_object, 'wb') as f:
+                    f.write(zlib.compress(tree_object))
+            except Exception as e:
+                print(f"Error writing tree object: {e}", file=sys.stderr)
+                sys.exit(1)
+
+            return tree_sha
+
+        except FileNotFoundError:
+            print(f"Error: Directory {object_path} not found.", file=sys.stderr)
+            sys.exit(1)
+
+        
 
     # -------- HELPER FUNCTIONS --------
 
@@ -180,8 +206,46 @@ class Git:
         sha1_hash.update(input_bytes)
 
         return sha1_hash.hexdigest()
-
     
+    # Reading, hashing, compressing, and optionally writing
+    def _write_blob(self, file_path: str, write_to_disk: bool) -> str:
+
+        # Need to : Read file -> Add header -> Calculate sha1 hash -> compress with zlib -> write to Git database
+        try:
+            with open(file_path, 'rb') as f:
+                file_content_bytes= f.read()
+        except Exception as e:
+            print(f"Error in reading the file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        file_content_size = len(file_content_bytes)
+        header_bytes = f"blob {file_content_size}\x00".encode('ascii')
+        file_content_with_header = header_bytes + file_content_bytes
+        sha1_of_file = self._compute_sha1_hash(file_content_with_header)
+
+        if not write_to_disk:
+            return
+        
+        compressed_data = zlib.compress(file_content_with_header, level=9) 
+        # making dir in object using the hash result
+        path_new_object_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR , sha1_of_file[:2])
+        os.makedirs(path_new_object_dir, exist_ok=True)
+
+        # writing to the hash defined path
+        path_new_object = os.path.join(path_new_object_dir, sha1_of_file[2:])
+        try:
+            with open(path_new_object, 'wb') as f:
+                f.write(compressed_data)
+        except Exception as e:
+            print(f"Error while writing to file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        return sha1_of_file
+
+
+
+
+# -------- MAIN ---------
 
 def main():
 
@@ -237,7 +301,9 @@ def main():
 
     ls_tree_parser.set_defaults(func = git.ls_tree)
 
-    # -- 5. SubCommand -   --
+    # -- 5. SubCommand - git write-tree  --
+    write_tree_parser = subparsers.add_parser('write-tree', help='creates a tree object from the current state of the staging area.')
+    write_tree_parser.set_defaults(func = git.write_tree)
 
     # ---- PARSE and DISPATCH -----
     args = parser.parse_args()
