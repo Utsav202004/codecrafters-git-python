@@ -142,7 +142,7 @@ class Git:
 
             # critical step - ignoring .git directory
             filtered_contents = [ name for name in contents 
-                                if name not in ('.git', '.', '..') and not name.endswith('.py')
+                                if name not in ('.git', '.', '..')
             ]
 
             if not filtered_contents:
@@ -156,11 +156,13 @@ class Git:
                     # Need - sha1 hash(20 byte), mode, filename
                     blob_sha1_hex = self._write_blob(object_path, True)
                     blob_sha1_bytes = bytes.fromhex(blob_sha1_hex)
-                    # Mode
-                    stat_info = os.stat(object_path)
-                    blob_mode = stat_info.st_mode
+                    # Mode - according to git standards -  not the os full permissions
+                    if os.access(object_path, os.X_OK):
+                        mode_str = '100755'
+                    else:
+                        mode_str = '100644'
                     
-                    entries.append(str(blob_mode).encode('ascii') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_bytes)
+                    entries.append(mode_str.encode('ascii') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_bytes)
 
                 elif os.path.isdir(object_path):
                     sub_tree_sha_hex = self.write_tree(args, object_path)
@@ -183,6 +185,8 @@ class Git:
                 print(f"Error writing tree object: {e}", file=sys.stderr)
                 sys.exit(1)
 
+            if dir_path == '.':
+                print(tree_sha)
             return tree_sha
 
         except FileNotFoundError:
