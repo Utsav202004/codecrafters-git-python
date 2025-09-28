@@ -176,7 +176,9 @@ class Git:
 
             tree_sha = self._compute_sha1_hash(tree_object)
 
-            path_to_tree_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, tree_sha[:2], tree_sha[2:])
+            path_to_tree_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, tree_sha[:2])
+            os.makedirs(path_to_tree_dir)
+            path_to_tree_object = os.path.join(path_to_tree_dir, tree_sha[2:])
 
             try:
                 with open(path_to_tree_object, 'wb') as f:
