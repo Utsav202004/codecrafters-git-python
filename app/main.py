@@ -162,15 +162,16 @@ class Git:
                     else:
                         mode_str = '100644'
                     
-                    entries.append(mode_str.encode('ascii') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_bytes)
+                    # appending tuple(filename, object) to sort later on alphabetically
+                    entries.append((object, mode_str.encode('ascii') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_bytes))
 
                 elif os.path.isdir(object_path):
                     sub_tree_sha_hex = self.write_tree(args, object_path)
-                    entries.append(b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex))
+                    entries.append((object, b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex)))
 
             entries.sort()
             for entry in entries:
-                tree_entries_str += entry
+                tree_entries_str += entry[1]
             size_of_tree_object = len(tree_entries_str)
             tree_object = b'tree ' + str(size_of_tree_object).encode('ascii') + b'\x00' + tree_entries_str
 
@@ -183,7 +184,7 @@ class Git:
 
             try:
                 with open(path_to_tree_object, 'wb') as f:
-                    f.write(zlib.compress(tree_object))
+                    f.write(zlib.compress(tree_object, level=9))
             except Exception as e:
                 print(f"Error writing tree object: {e}", file=sys.stderr)
                 sys.exit(1)
