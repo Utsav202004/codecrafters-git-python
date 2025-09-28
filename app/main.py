@@ -190,7 +190,7 @@ class Git:
             return tree_sha
 
         except FileNotFoundError:
-            print(f"Error: Directory {object_path} not found.", file=sys.stderr)
+            print(f"Error: Directory {dir_path} not found.", file=sys.stderr)
             sys.exit(1)
 
         
