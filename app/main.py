@@ -184,7 +184,7 @@ class Git:
 
             try:
                 with open(path_to_tree_object, 'wb') as f:
-                    f.write(zlib.compress(tree_object, level=9))
+                    f.write(zlib.compress(tree_object))
             except Exception as e:
                 print(f"Error writing tree object: {e}", file=sys.stderr)
                 sys.exit(1)
@@ -241,7 +241,7 @@ class Git:
         if not write_to_disk:
             return
         
-        compressed_data = zlib.compress(file_content_with_header, level=9) 
+        compressed_data = zlib.compress(file_content_with_header) 
         # making dir in object using the hash result
         path_new_object_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR , sha1_of_file[:2])
         os.makedirs(path_new_object_dir, exist_ok=True)
