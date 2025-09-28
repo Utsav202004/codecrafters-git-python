@@ -145,10 +145,10 @@ class Git:
                                 if name not in ('.git', '.', '..')
             ]
 
-            if not filtered_contents:
-                # empty directory
-                tree_object = b'tree 0\x00'
-                return self._compute_sha1_hash(tree_object)
+            # if not filtered_contents:
+            #     # empty directory
+            #     tree_object = b'tree 0\x00'
+            #     return self._compute_sha1_hash(tree_object)
 
             for object in filtered_contents:
                 object_path = os.path.join(directory_path, object)
@@ -167,7 +167,7 @@ class Git:
 
                 elif os.path.isdir(object_path):
                     sub_tree_sha_hex = self.write_tree(args, object_path)
-                    entries.append((object + '/', b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex)))
+                    entries.append((object + '/', b'40000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex)))
 
             entries.sort()
             for entry in entries:
