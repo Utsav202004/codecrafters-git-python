@@ -149,7 +149,7 @@ class Git:
                 object_path = os.path.join(directory_path, object)
                 if os.path.isfile(object_path):
                     # Need - sha1 hash(20 byte), mode, filename
-                    blob_sha1_hex = self._get_object_content(object_path, True)
+                    blob_sha1_hex = self._write_blob(object_path, True)
                     # Mode
                     stat_info = os.stat(object_path)
                     blob_mode = stat_info.st_mode
