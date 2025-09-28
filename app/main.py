@@ -142,7 +142,8 @@ class Git:
 
             if not contents:
                 # empty directory
-                pass
+                tree_object = b'tree 0\x00'
+                return self._compute_sha1_hash(tree_object)
 
             for object in contents:
                 object_path = os.path.join(directory_path, object)
