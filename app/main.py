@@ -130,7 +130,7 @@ class Git:
             i = sha1_start + 20
 
     # -- 5. SubCommand - git write-tree --
-    def write_tree(self, directory_path = './'):
+    def write_tree(self, args, directory_path = './'):
         tree_entries_str = b''
         entries = []
 
@@ -157,7 +157,7 @@ class Git:
                     entries.append(blob_mode.encode('utf-8') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_hex.encode('utf-8'))
 
                 elif os.path.isdir(object_path):
-                    sub_tree_sha_hex = self.write_tree(object_path)
+                    sub_tree_sha_hex = self.write_tree(None, object_path)
                     entries.append(b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + sub_tree_sha_hex.encode('utf-8'))
 
             entries.sort()
