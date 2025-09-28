@@ -130,7 +130,7 @@ class Git:
             i = sha1_start + 20
 
     # -- 5. SubCommand - git write-tree --
-    def write_tree(self, args, directory_path = './'):
+    def write_tree(self, args, directory_path = '.'):
         tree_entries_str = b''
         entries = []
 
@@ -178,7 +178,7 @@ class Git:
 
             path_to_tree_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, tree_sha[:2])
             os.makedirs(path_to_tree_dir, exist_ok=True)
-            
+
             path_to_tree_object = os.path.join(path_to_tree_dir, tree_sha[2:])
 
             try:
