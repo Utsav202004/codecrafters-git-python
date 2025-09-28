@@ -164,7 +164,7 @@ class Git:
             for entry in entries:
                 tree_entries_str += entry
             size_of_tree_object = len(tree_entries_str)
-            tree_object = b'tree ' + size_of_tree_object.encode('utf-8') + b'\x00' + tree_entries_str
+            tree_object = b'tree ' + str(size_of_tree_object).encode('utf-8') + b'\x00' + tree_entries_str
 
             tree_sha = self._compute_sha1_hash(tree_object)
 
