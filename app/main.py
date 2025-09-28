@@ -60,7 +60,7 @@ class Git:
             print(f"fatal: file does not exist.")
             sys.exit(1)
 
-        sha1 = self._get_object_content(args.file_path, args.w)
+        sha1 = self._write_blob(args.file_path, args.w)
         
         print(sha1)
 
@@ -140,31 +140,37 @@ class Git:
         try:
             contents = os.listdir(dir_path)
 
-            if not contents:
+            # critical step - ignoring .git directory
+            filtered_contents = [ name for name in contents 
+                                if name not in ('.git', '.', '..') and not name.endswith('.py')
+            ]
+
+            if not filtered_contents:
                 # empty directory
                 tree_object = b'tree 0\x00'
                 return self._compute_sha1_hash(tree_object)
 
-            for object in contents:
+            for object in filtered_contents:
                 object_path = os.path.join(directory_path, object)
                 if os.path.isfile(object_path):
                     # Need - sha1 hash(20 byte), mode, filename
                     blob_sha1_hex = self._write_blob(object_path, True)
+                    blob_sha1_bytes = bytes.fromhex(blob_sha1_hex)
                     # Mode
                     stat_info = os.stat(object_path)
                     blob_mode = stat_info.st_mode
                     
-                    entries.append(str(blob_mode).encode('utf-8') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_hex.encode('utf-8'))
+                    entries.append(str(blob_mode).encode('ascii') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_bytes)
 
                 elif os.path.isdir(object_path):
-                    sub_tree_sha_hex = self.write_tree(None, object_path)
-                    entries.append(b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + sub_tree_sha_hex.encode('utf-8'))
+                    sub_tree_sha_hex = self.write_tree(args, object_path)
+                    entries.append(b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex))
 
             entries.sort()
             for entry in entries:
                 tree_entries_str += entry
             size_of_tree_object = len(tree_entries_str)
-            tree_object = b'tree ' + str(size_of_tree_object).encode('utf-8') + b'\x00' + tree_entries_str
+            tree_object = b'tree ' + str(size_of_tree_object).encode('ascii') + b'\x00' + tree_entries_str
 
             tree_sha = self._compute_sha1_hash(tree_object)
 
