@@ -154,7 +154,7 @@ class Git:
                     stat_info = os.stat(object_path)
                     blob_mode = stat_info.st_mode
                     
-                    entries.append(blob_mode.to_bytes() + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_hex.encode('utf-8'))
+                    entries.append(str(blob_mode).encode('utf-8') + b'\x20' + object.encode('utf-8') + b'\x00' + blob_sha1_hex.encode('utf-8'))
 
                 elif os.path.isdir(object_path):
                     sub_tree_sha_hex = self.write_tree(None, object_path)
