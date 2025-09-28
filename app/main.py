@@ -167,7 +167,7 @@ class Git:
 
                 elif os.path.isdir(object_path):
                     sub_tree_sha_hex = self.write_tree(args, object_path)
-                    entries.append((object, b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex)))
+                    entries.append((object + '/', b'040000' + b'\x20' + object.encode('utf-8') + b'\x00' + bytes.fromhex(sub_tree_sha_hex)))
 
             entries.sort()
             for entry in entries:
