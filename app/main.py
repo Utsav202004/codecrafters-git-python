@@ -232,7 +232,7 @@ class Git:
         path_of_commit_object = os.path.join(path_to_commit_dir, sha_of_commit_object[2:])
 
         try:
-            with open(path_of_commit_object, 'w') as f:
+            with open(path_of_commit_object, 'wb') as f:
                 f.write(content_object.encode('utf-8'))
         except Exception as e:
             print(f"Error writing to commit object: {e}", file=sys.stderr)
