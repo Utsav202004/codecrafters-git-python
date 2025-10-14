@@ -228,9 +228,9 @@ class Git:
             f"tree {tree_sha}\n"
             f"parent {parent_sha}\n"
             f"author {identity}\n"
-            f"comitter {identity}\n"
+            f"committer {identity}\n"
             f"\n"
-            f"args.message\n"
+            f"{args.message}\n"
         )
 
         sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
