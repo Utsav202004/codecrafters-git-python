@@ -224,23 +224,29 @@ class Git:
         parent_sha = args.parent
         identity = f"{commiter_name} <{commiter_email}> {final_timestamp_string}"
 
-        content_object = (
+        commit_content_str = (
             f"tree {tree_sha}\n"
             f"parent {parent_sha}\n"
             f"author {identity}\n"
             f"committer {identity}\n"
             f"\n"
             f"{args.message}\n"
+        )   
+
+        commit_content_bytes = commit_content_str.encode('utf-8')
+        
+        commit_object_content = (
+            b'commit ' + str(len(commit_content_bytes)).encode('ascii') + b'\x00' + commit_content_bytes
         )
 
-        sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
+        sha_of_commit_object = self._compute_sha1_hash(commit_content_str.encode('utf-8'))
         path_to_commit_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2])
         os.makedirs(path_to_commit_dir, exist_ok=True)
         path_of_commit_object = os.path.join(path_to_commit_dir, sha_of_commit_object[2:])
 
         try:
             with open(path_of_commit_object, 'wb') as f:
-                f.write(zlib.compress(content_object.encode('utf-8')))
+                f.write(zlib.compress(commit_object_content.encode('utf-8')))
         except Exception as e:
             print(f"Error writing to commit object: {e}", file=sys.stderr)
             sys.exit(1)
