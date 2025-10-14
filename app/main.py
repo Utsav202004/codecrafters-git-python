@@ -2,6 +2,8 @@ import sys
 import os
 import zlib
 import hashlib
+import time
+import datetime
 import argparse
 
 class Git:
@@ -29,6 +31,7 @@ class Git:
 
         print("Initialized git directory")
 
+
     # -- 2. COMMAND : git cat-file <flag> <hash-of-the-file> --
     def cat_file(self, args): 
         hash_str = args.object_hash
@@ -53,6 +56,7 @@ class Git:
             print(size.decode('utf-8'), end='')
         else:
             print("Usage: cat-file <flag> <hash-of-object>", file=sys.stderr)
+
 
     # -- 3. COMMAND: git hash-object <flag> <file-name> -- 
     def hash_object(self, args):
@@ -129,6 +133,7 @@ class Git:
 
             i = sha1_start + 20
 
+
     # -- 5. SubCommand - git write-tree --
     def write_tree(self, args, directory_path = '.'):
         tree_entries_str = b''
@@ -142,8 +147,7 @@ class Git:
 
             # critical step - ignoring .git directory
             filtered_contents = [ name for name in contents 
-                                if name not in ('.git', '.', '..')
-            ]
+                                if name not in ('.git', '.', '..')]
 
             if not filtered_contents:
                 # empty directory
@@ -197,11 +201,48 @@ class Git:
             print(f"Error: Directory {dir_path} not found.", file=sys.stderr)
             sys.exit(1)
 
+
+    # -- 6. SubCommand - git commit-tree <tree-sha> -p <parent-commit-sha> -m <commit-message> --
+    def commit_tree(self, args):
+        # To do: Create commit content -> generate sha -> make a commit object -> print the sha
+
+        # hardcoding the name and email
+        commiter_name = 'utsavgoyal'
+        commiter_email = 'goyalutsav2004@gmail.com'
+        
+        # time format - epoch timestamp + the timezone offset
+        current_time = int(time.time())
+        offset_seconds = time.altzone if time.daylight else time.timezone
+        offset_hours = abs(offset_seconds) // 3600
+        offset_minutes = (abs(offset_seconds) % 3600) // 60
+        sign = '-' if offset_seconds > 0 else '+'
+        timezone_offset = f"{sign}{offset_hours:02}{offset_minutes:02}"
+
+        final_timestamp_string = f"{current_time} {timezone_offset}"
+
+        tree_sha = args.tree_hash
+        parent_sha = args.parent
+        name_mail_time = commiter_name + commiter_email + final_timestamp_string
+
+        content_object = 'tree ' + tree_sha + 'parent' + parent_sha + 'author' + name_mail_time + 'comitter' + name_mail_time + args.commit_message
+
+        sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
+        path_of_commit_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2], sha_of_commit_object[2:])
+
+        try:
+            with open(path_of_commit_object, 'w') as f:
+                f.write(content_object.encode('utf-8'))
+        except Exception as e:
+            print(f"Error writing to commit object: {e}", file=sys.stderr)
+            sys.exit()
+
+        print(sha_of_commit_object)
+
         
 
     # -------- HELPER FUNCTIONS --------
 
-    # Reading and Decompress a zlib-compressed object file
+    # 1. Reading and Decompress a zlib-compressed object file
     def _get_object_content(self, file_path):
         if not os.path.exists(file_path):
             return None
@@ -214,7 +255,8 @@ class Git:
         except (zlib.error, Exception):
             return None
         
-    # Computing sha1 hash 
+
+    # 2. Computing sha1 hash 
     def _compute_sha1_hash(self, input_bytes: bytes): 
         # create object of hashlib -> update with encoded file data -> hexdigest function
         sha1_hash = hashlib.sha1()
@@ -222,7 +264,8 @@ class Git:
 
         return sha1_hash.hexdigest()
     
-    # Reading, hashing, compressing, and optionally writing
+
+    # 3. Reading, hashing, compressing, and optionally writing
     def _write_blob(self, file_path: str, write_to_disk: bool) -> str:
 
         # Need to : Read file -> Add header -> Calculate sha1 hash -> compress with zlib -> write to Git database
@@ -282,6 +325,7 @@ def main():
     init_parser = subparsers.add_parser('init', help="initiliase a new Git repo")
     init_parser.set_defaults(func=git.init)
 
+
     # -- 2. Subcommand - Git cat-file <flag> <sha1-hash> --
     cat_file_parser = subparsers.add_parser('cat-file', help="reading the content of a Git object")
 
@@ -295,8 +339,9 @@ def main():
     cat_file_parser.add_argument('object_hash', type=str, help="sha1-hash of the Git object to read")
     cat_file_parser.set_defaults(func=git.cat_file)
 
+
     # -- 3. Subcommand - Git hash-object <flag> <filename> --
-    hash_object_parser = subparsers.add_parser('hash-object', help="Computing the sha-1 hash of git object, and optionally storing the objec to Git database")
+    hash_object_parser = subparsers.add_parser('hash-object', help="Computing the sha-1 hash of git object, and optionally storing the object to Git database")
 
     # adding the optional flag
     hash_object_parser.add_argument('-w', action='store_true', help="Storing the object to Git database")
@@ -305,20 +350,37 @@ def main():
     hash_object_parser.add_argument('file_path', help="file path to caculate the sha1-hash of")
     hash_object_parser.set_defaults(func=git.hash_object)
 
+
     # -- 4. Subcommand - Git ls-tree <flag> <tree-sha1-hash> --
     ls_tree_parser = subparsers.add_parser('ls-tree', help='list the content of a tree object')
 
     # required tree hash
-    ls_tree_parser.add_argument("tree_hash", help='SHA-1 hash of the tree object to read')
+    ls_tree_parser.add_argument("tree_hash", type=str, help='SHA-1 hash of the tree object to read')
 
     # optional flag - --name-only
     ls_tree_parser.add_argument('--name-only', dest='name_only', action='store_true', help='Only print the names of the item')
 
     ls_tree_parser.set_defaults(func = git.ls_tree)
 
+
     # -- 5. SubCommand - git write-tree  --
     write_tree_parser = subparsers.add_parser('write-tree', help='creates a tree object from the current state of the staging area.')
     write_tree_parser.set_defaults(func = git.write_tree)
+
+
+    # -- 6. Subcommand - git commit-tree <tree-sha> -p <commit-sha> -m <message> --
+    commit_tree_parser = subparsers.add_parser('commit-tree', help="creating a commit object")
+
+    # required tree hash
+    commit_tree_parser.add_argument("tree_hash", type=str, help="SHA-1 hash of the tree object (snapshot root)")
+    commit_tree_parser.add_argument('-p', '--parent', type=str, action='store', required=True, help="SHA-1 hash of parent commit")
+    commit_tree_parser.add_argument('-m', '--message', type=str, action='store', required=True, help="Commit message")
+
+    commit_tree_parser.set_defaults(func= git.commit_tree)
+
+    # -- 7. Subcommand -  --
+
+
 
     # ---- PARSE and DISPATCH -----
     args = parser.parse_args()
