@@ -224,7 +224,7 @@ class Git:
         parent_sha = args.parent
         identity = f"{commiter_name} <{commiter_email}> {final_timestamp_string}"
 
-        lines = [f"tree {tree_sha}\n"]
+        lines = [f"tree {tree_sha}"]
 
         if parent_sha:
             lines.append(f"parent {parent_sha}")
@@ -236,7 +236,8 @@ class Git:
             args.message,
         ])   
 
-        commit_content_bytes = "\n".join(lines) + "\n"
+        commit_content = "\n".join(lines) + "\n"
+        commit_content_bytes = commit_content.encode('utf-8')
         
         commit_object_content = (
             b'commit ' + str(len(commit_content_bytes)).encode('ascii') + b'\x00' + commit_content_bytes
