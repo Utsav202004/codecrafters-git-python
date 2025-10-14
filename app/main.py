@@ -222,9 +222,16 @@ class Git:
 
         tree_sha = args.tree_hash
         parent_sha = args.parent
-        name_mail_time = commiter_name + commiter_email + final_timestamp_string
+        identity = f"{commiter_name} <{commiter_email}> {final_timestamp_string}"
 
-        content_object = 'tree ' + tree_sha + '\n' + 'parent' + parent_sha + '\n' + 'author' + name_mail_time + '\n' + 'comitter' + name_mail_time + '\n' + '\n' + args.message
+        content_object = (
+            f"tree {tree_sha}\n"
+            f"parent {parent_sha}\n"
+            f"author {identity}\n"
+            f"comitter {identity}\n"
+            f"\n"
+            f"args.message\n"
+        )
 
         sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
         path_to_commit_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2])
