@@ -227,7 +227,9 @@ class Git:
         content_object = 'tree ' + tree_sha + 'parent' + parent_sha + 'author' + name_mail_time + 'comitter' + name_mail_time + args.message
 
         sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
-        path_of_commit_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2], sha_of_commit_object[2:])
+        path_to_commit_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2])
+        os.makedirs(path_to_commit_dir)
+        path_of_commit_object = os.path.join(path_to_commit_dir, sha_of_commit_object[2:])
 
         try:
             with open(path_of_commit_object, 'w') as f:
