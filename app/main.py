@@ -228,15 +228,15 @@ class Git:
 
         sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
         path_to_commit_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2])
-        os.makedirs(path_to_commit_dir)
+        os.makedirs(path_to_commit_dir, exist_ok=True)
         path_of_commit_object = os.path.join(path_to_commit_dir, sha_of_commit_object[2:])
 
         try:
             with open(path_of_commit_object, 'wb') as f:
-                f.write(content_object.encode('utf-8'))
+                f.write(zlib.compress(content_object.encode('utf-8')))
         except Exception as e:
             print(f"Error writing to commit object: {e}", file=sys.stderr)
-            sys.exit()
+            sys.exit(1)
 
         print(sha_of_commit_object)
 
