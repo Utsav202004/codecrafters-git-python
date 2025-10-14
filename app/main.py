@@ -224,7 +224,7 @@ class Git:
         parent_sha = args.parent
         name_mail_time = commiter_name + commiter_email + final_timestamp_string
 
-        content_object = 'tree ' + tree_sha + 'parent' + parent_sha + 'author' + name_mail_time + 'comitter' + name_mail_time + args.commit_message
+        content_object = 'tree ' + tree_sha + 'parent' + parent_sha + 'author' + name_mail_time + 'comitter' + name_mail_time + args.message
 
         sha_of_commit_object = self._compute_sha1_hash(content_object.encode('utf-8'))
         path_of_commit_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2], sha_of_commit_object[2:])
