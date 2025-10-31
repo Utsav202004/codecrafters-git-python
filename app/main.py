@@ -5,7 +5,7 @@ import hashlib
 import time
 import datetime
 import argparse
-import requests
+from urllib import request
 import re
 
 class Git:
@@ -289,16 +289,19 @@ class Git:
         ref_discovery_url = f"{repo_url.rstrip('/')}/info/refs?service=git-upload-pack"
 
         try:
-            response = requests.get(ref_discovery_url)
-            response.raise_for_status() # Fail on 4xx/5xx errors
+            with request.urlopen(ref_discovery_url) as response:
+                if response.status != 200:
+                    raise Exception(f"HTTP Error {response.status}: {response.reason}")
+                
+                # Read the response content and decode it from bytes to string
+                response_text = response.read().decode('utf-8')
 
             print("--- REF DISCOVERY RESPONSE ---")
-            print(response.text)
+            print(response_text)
             print("------------------------------")
             print("Ref discovery successful. (Partial implementation)")
 
-
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"fatal: could not read from remote repository: {e}", file=sys.stderr)
             sys.exit(1)
         
