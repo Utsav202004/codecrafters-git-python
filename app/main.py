@@ -466,7 +466,7 @@ class Git:
         
         return hex_length.encode('utf-8') + data_bytes
 
-    # 5. Parse a pkt-line response
+# 5. Parse a pkt-line response
     def _parse_pkt_lines(self, response_bytes: bytes):
         """
         Parses the pkt-line formatted response from info/refs.
@@ -474,33 +474,48 @@ class Git:
         refs = {}
         capabilities = []
         i = 0
-        
+        is_first_ref_line = True # Flag to find capabilities
+
         while i < len(response_bytes):
             # Read the 4-byte hex length prefix
             hex_length = response_bytes[i:i+4].decode('utf-8')
+            
             if hex_length == '0000':
+                # This is a flush packet, often separates service line from refs
                 i += 4
-                break # Flush packet, end of refs
+                continue # Skip flush packets
             
             length = int(hex_length, 16)
-            
+            if length == 0:
+                i += 4
+                continue
+                
             # Get the line content (length - 4 bytes for the prefix)
             line_content = response_bytes[i+4 : i+length]
             line_str = line_content.decode('utf-8').strip() #.strip() to remove trailing newline
             
             i += length # Move to the next line
+
+            # The *very first line* is a service advertisement, skip it
+            if line_str.startswith("# service="):
+                continue
             
-            # The first line contains capabilities
-            if i == length: # First line
-                sha, ref_name_with_caps = line_str.split(' ', 1)
-                ref_name, caps_str = ref_name_with_caps.split('\x00')
-                refs[ref_name] = sha
-                capabilities = caps_str.split(' ')
-            else:
-                # Subsequent lines are just 'sha ref_name'
-                if line_str: # avoid processing empty lines
-                    sha, ref_name = line_str.split(' ', 1)
+            # Now we are in the ref list
+            sha, ref_part = line_str.split(' ', 1)
+            
+            # The *first ref line* (after the service line) has the capabilities
+            if is_first_ref_line:
+                if '\x00' in ref_part:
+                    ref_name, caps_str = ref_part.split('\x00', 1)
                     refs[ref_name] = sha
+                    capabilities = caps_str.split(' ')
+                    is_first_ref_line = False # We've found the capabilities
+                else:
+                    # This can happen if the first line is a simple ref
+                    refs[ref_part] = sha
+            else:
+                # All other lines are just refs
+                refs[ref_part] = sha
                     
         return refs, capabilities
 
