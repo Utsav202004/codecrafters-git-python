@@ -401,49 +401,40 @@ class Git:
                     
         return refs, capabilities
 
-# 7. Parse the downloaded PACK file
+    # 7. Parse the downloaded PACK file
     def _parse_pack_file(self, data: bytes, head_sha: str):
         f = io.BytesIO(data)
         
         # Read PACK header
         pack_sig, version, num_objects = self._read_pack_header(f)
         
-        objects = {} # Store objects for delta resolution
+        objects = {}  # Store objects for delta resolution
         
         for _ in range(num_objects):
             # Read object header
             obj_type, obj_size, ofs = self._read_pack_object_header(f)
             
-            # --- START: CORRECTED ZLIB READ ---
-            # Create a decompressor object
+            decompressed_data = b""
             decompressor = zlib.decompressobj()
             
-            # We read from the file and feed the decompressor
-            # until it tells us it's done (eof) or has unused data.
-            decompressed_data = b""
-            
-            # Feed the decompressor chunks until it has unused_data
-            # (meaning we read part of the next object) or it hits EOF
+            # Robust handling of decompression
             while True:
-                chunk = f.read(1024) # Read in chunks
+                chunk = f.read(1024)
                 if not chunk:
-                    # End of file before stream finished?
                     break
                 
-                decompressed_data += decompressor.decompress(chunk)
-                
-                if decompressor.unused_data:
-                    # We've read too far! This is the start of the next object.
-                    # We must "put back" the data we didn't use.
-                    f.seek(f.tell() - len(decompressor.unused_data))
-                    break
-                
-                if decompressor.eof:
-                    # The stream ended perfectly on a chunk boundary
+                try:
+                    decompressed_data += decompressor.decompress(chunk)
+                    
+                    # If decompression reaches EOF or has unused data, stop
+                    if decompressor.unused_data or decompressor.eof:
+                        f.seek(f.tell() - len(decompressor.unused_data))
+                        break
+                except zlib.error as e:
+                    print(f"Decompression error at offset {ofs}: {e}", file=sys.stderr)
                     break
             
-            # --- END: CORRECTED ZLIB READ ---
-
+            # Processing the object based on its type
             if obj_type == Git.OBJ_COMMIT:
                 objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_TREE:
@@ -451,14 +442,7 @@ class Git:
             elif obj_type == Git.OBJ_BLOB:
                 objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_OFS_DELTA:
-                # The data for a delta is:
-                # 1. Variable-length base object offset
-                # 2. Delta instructions
-                
-                # We read this from the DECOMPRESSED data
                 delta_stream = io.BytesIO(decompressed_data)
-                
-                # Read the base object offset (variable length)
                 offset_data = delta_stream.read(1)
                 offset = offset_data[0] & 0x7F
                 while offset_data[0] & 0x80:
@@ -466,14 +450,12 @@ class Git:
                     offset = ((offset + 1) << 7) | (offset_data[0] & 0x7F)
                 
                 base_obj_offset = ofs - offset
-                
-                # The rest of the data is the delta instructions
                 delta_instructions = delta_stream.read()
                 
                 objects[ofs] = (obj_type, delta_instructions, base_obj_offset)
                 continue # Skip writing, will resolve deltas later
             else:
-                print(f"Unsupported object type {obj_type}")
+                print(f"Unsupported object type {obj_type}", file=sys.stderr)
                 continue
 
         # Resolve deltas and write objects
