@@ -401,7 +401,6 @@ class Git:
                     
         return refs, capabilities
 
-    # 7. Parse the downloaded PACK file
     def _parse_pack_file(self, data: bytes, head_sha: str):
         f = io.BytesIO(data)
         
@@ -411,13 +410,11 @@ class Git:
         objects = {}  # Store objects for delta resolution
         
         for _ in range(num_objects):
-            # Read object header
             obj_type, obj_size, ofs = self._read_pack_object_header(f)
             
             decompressed_data = b""
             decompressor = zlib.decompressobj()
             
-            # Robust handling of decompression
             while True:
                 chunk = f.read(1024)
                 if not chunk:
@@ -425,8 +422,6 @@ class Git:
                 
                 try:
                     decompressed_data += decompressor.decompress(chunk)
-                    
-                    # If decompression reaches EOF or has unused data, stop
                     if decompressor.unused_data or decompressor.eof:
                         f.seek(f.tell() - len(decompressor.unused_data))
                         break
@@ -434,16 +429,40 @@ class Git:
                     print(f"Decompression error at offset {ofs}: {e}", file=sys.stderr)
                     break
             
-            # Processing the object based on its type
-            if obj_type == Git.OBJ_COMMIT:
+            if obj_type == Git.OBJ_OFS_DELTA:
+                delta_stream = io.BytesIO(decompressed_data)
+                offset_data = delta_stream.read(1)
+                if not offset_data:
+                    print("Offset data is empty; skipping this object.")
+                    continue
+
+                offset = offset_data[0] & 0x7F
+                while offset_data[0] & 0x80:
+                    offset_data = delta_stream.read(1)
+                    if not offset_data:
+                        print("Offset read failed mid-stream.")
+                        break
+                    offset = ((offset + 1) << 7) | (offset_data[0] & 0x7F)
+                    
+                base_obj_offset = ofs - offset
+                
+                delta_instructions = delta_stream.read()
+                objects[ofs] = (obj_type, delta_instructions, base_obj_offset)
+                continue
+
+            elif obj_type == Git.OBJ_COMMIT:
                 objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_TREE:
                 objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_BLOB:
                 objects[ofs] = (obj_type, decompressed_data, None)
+
             elif obj_type == Git.OBJ_OFS_DELTA:
                 delta_stream = io.BytesIO(decompressed_data)
                 offset_data = delta_stream.read(1)
+                if not offset_data:
+                    print("Offset data is empty; skipping this object.")
+                    continue
                 offset = offset_data[0] & 0x7F
                 while offset_data[0] & 0x80:
                     offset_data = delta_stream.read(1)
