@@ -401,7 +401,7 @@ class Git:
                     
         return refs, capabilities
 
-    # 7. Parse the downloaded PACK file
+# 7. Parse the downloaded PACK file
     def _parse_pack_file(self, data: bytes, head_sha: str):
         f = io.BytesIO(data)
         
@@ -414,42 +414,81 @@ class Git:
             # Read object header
             obj_type, obj_size, ofs = self._read_pack_object_header(f)
             
+            # --- START: CORRECTED ZLIB READ ---
+            # Create a decompressor object
+            decompressor = zlib.decompressobj()
+            
+            # We read from the file and feed the decompressor
+            # until it tells us it's done (eof) or has unused data.
+            decompressed_data = b""
+            
+            # Feed the decompressor chunks until it has unused_data
+            # (meaning we read part of the next object) or it hits EOF
+            while True:
+                chunk = f.read(1024) # Read in chunks
+                if not chunk:
+                    # End of file before stream finished?
+                    break
+                
+                decompressed_data += decompressor.decompress(chunk)
+                
+                if decompressor.unused_data:
+                    # We've read too far! This is the start of the next object.
+                    # We must "put back" the data we didn't use.
+                    f.seek(f.tell() - len(decompressor.unused_data))
+                    break
+                
+                if decompressor.eof:
+                    # The stream ended perfectly on a chunk boundary
+                    break
+            
+            # --- END: CORRECTED ZLIB READ ---
+
             if obj_type == Git.OBJ_COMMIT:
-                type_str = "commit"
+                objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_TREE:
-                type_str = "tree"
+                objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_BLOB:
-                type_str = "blob"
+                objects[ofs] = (obj_type, decompressed_data, None)
             elif obj_type == Git.OBJ_OFS_DELTA:
-                # Read the base object offset
-                offset_data = f.read(1)
+                # The data for a delta is:
+                # 1. Variable-length base object offset
+                # 2. Delta instructions
+                
+                # We read this from the DECOMPRESSED data
+                delta_stream = io.BytesIO(decompressed_data)
+                
+                # Read the base object offset (variable length)
+                offset_data = delta_stream.read(1)
                 offset = offset_data[0] & 0x7F
                 while offset_data[0] & 0x80:
-                    offset_data = f.read(1)
+                    offset_data = delta_stream.read(1)
                     offset = ((offset + 1) << 7) | (offset_data[0] & 0x7F)
                 
                 base_obj_offset = ofs - offset
                 
-                # Decompress data
-                decompressed_delta = zlib.decompress(f.read())
-                objects[ofs] = (obj_type, decompressed_delta, base_obj_offset)
+                # The rest of the data is the delta instructions
+                delta_instructions = delta_stream.read()
+                
+                objects[ofs] = (obj_type, delta_instructions, base_obj_offset)
                 continue # Skip writing, will resolve deltas later
             else:
                 print(f"Unsupported object type {obj_type}")
                 continue
-            
-            # Decompress and store base objects
-            decompressed_data = zlib.decompress(f.read())
-            objects[ofs] = (obj_type, decompressed_data, None)
 
         # Resolve deltas and write objects
         for ofs, (obj_type, data, base_info) in objects.items():
             if obj_type == Git.OBJ_OFS_DELTA:
                 base_obj_offset = base_info
-                base_type, base_data, _ = objects[base_obj_offset]
                 
+                # Ensure base object is already resolved (can be a delta itself)
+                base_type, base_data, _ = objects[base_obj_offset]
+                while base_type == Git.OBJ_OFS_DELTA:
+                    # This base is *also* a delta. Recurse.
+                    (base_type, base_data, base_info) = objects[base_info]
+                    
                 # Apply patch
-                patched_data = self._apply_delta(base_data, data)
+                patched_data = self._apply_delta(base_data, data) # `data` is the instructions
                 
                 # Determine type of patched object
                 if base_type == Git.OBJ_COMMIT:
@@ -459,13 +498,15 @@ class Git:
                 elif base_type == Git.OBJ_BLOB:
                     final_type_str = "blob"
                 
-                # Write the new, patched object
-                self._write_object(patched_data, final_type_str)
+                # Write the new, patched object and update its entry
+                sha = self._write_object(patched_data, final_type_str)
+                objects[ofs] = (base_type, patched_data, None) # Now it's a base object
             
             elif obj_type in [Git.OBJ_COMMIT, Git.OBJ_TREE, Git.OBJ_BLOB]:
                 # Write base objects
                 self._write_object(data, "commit" if obj_type == Git.OBJ_COMMIT else ("tree" if obj_type == Git.OBJ_TREE else "blob"))
 
+                
     # 8. Read PACK file header
     def _read_pack_header(self, f):
         # 4-byte signature 'PACK'
