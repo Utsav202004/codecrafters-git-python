@@ -28,8 +28,13 @@ class Git:
         os.makedirs(os.path.join(self.git_dir, Git.REFS_DIR, Git.HEADS_DIR), exist_ok=True)
 
         # writing to head file
-        with open(os.path.join(self.git_dir, Git.HEAD_FILE), 'w') as f:
-            f.write(f"ref: {os.path.join(Git.REFS_DIR, Git.HEADS_DIR)}/main\n")
+        head_file_path = os.path.join(self.git_dir, Git.HEAD_FILE)
+        
+        # Only write the file if it doesn't exist
+        # This prevents 'clone' from overwriting the HEAD after checkout
+        if not os.path.exists(head_file_path):
+            with open(head_file_path, 'w') as f:
+                f.write(f"ref: {os.path.join(Git.REFS_DIR, Git.HEADS_DIR)}/main\n")
 
         print("Initialized git directory")
 
@@ -153,7 +158,7 @@ class Git:
 
             if not filtered_contents:
                 # empty directory
-                tree_object = b'tree 0\x00'
+                tree_object = b'tree 0\x0S\x00'
                 return self._compute_sha1_hash(tree_object)
 
             for object in filtered_contents:
@@ -206,8 +211,6 @@ class Git:
 
     # -- 6. SubCommand - git commit-tree <tree-sha> -p <parent-commit-sha> -m <commit-message> --
     def commit_tree(self, args):
-        # To do: Create commit content -> generate sha -> make a commit object -> print the sha
-
         # hardcoding the name and email
         commiter_name = 'utsavgoyal'
         commiter_email = 'goyalutsav2004@gmail.com'
@@ -265,6 +268,7 @@ class Git:
         repo_url = args.repo_address
         directory_name = args.directory_name
 
+        # --- 1. Create directory and init ---
         try:
             if not os.path.exists(directory_name):
                 os.makedirs(directory_name)
@@ -275,10 +279,13 @@ class Git:
                  print(f"fatal: '{directory_name}' exists and is not empty.", file=sys.stderr)
                  sys.exit(1)
 
+            # Change into the new directory.
+            # We need to update our Git object to work from this new directory.
             os.chdir(directory_name)
+            self.git_dir = os.path.join(os.getcwd(), '.git')
 
             self.init(args) 
-            print(f"Initialized empty Git repository in {os.getcwd()}/.git/")
+            print(f"Initialized empty Git repository in {self.git_dir}/")
 
         except Exception as e:
             print(f"Error creating directory or initializing repo: {e}", file=sys.stderr)
@@ -286,24 +293,101 @@ class Git:
 
         print(f"Cloning into '{directory_name}'...")
 
+        # --- 2. Ref Discovery (GET request) ---
         ref_discovery_url = f"{repo_url.rstrip('/')}/info/refs?service=git-upload-pack"
-
+        
         try:
             with request.urlopen(ref_discovery_url) as response:
                 if response.status != 200:
                     raise Exception(f"HTTP Error {response.status}: {response.reason}")
                 
-                # Read the response content and decode it from bytes to string
-                response_text = response.read().decode('utf-8')
-
-            print("--- REF DISCOVERY RESPONSE ---")
-            print(response_text)
-            print("------------------------------")
-            print("Ref discovery successful. (Partial implementation)")
+                response_bytes = response.read()
 
         except Exception as e:
             print(f"fatal: could not read from remote repository: {e}", file=sys.stderr)
             sys.exit(1)
+
+        # --- 3. Parse Ref Discovery response ---
+        # The response is in "pkt-line" format.
+        # We need to parse it to find the refs we want.
+        refs, capabilities = self._parse_pkt_lines(response_bytes)
+        
+        # Find the SHA-1 for the main branch
+        head_sha = ""
+        if 'refs/heads/main' in refs:
+            head_sha = refs['refs/heads/main']
+        elif 'refs/heads/master' in refs:
+            head_sha = refs['refs/heads/master']
+        else:
+            print("fatal: could not find 'main' or 'master' branch", file=sys.stderr)
+            sys.exit(1)
+
+        # --- 4. Build and send POST request for PACK file ---
+        upload_pack_url = f"{repo_url.rstrip('/')}/git-upload-pack"
+        
+        # Build the body of the POST request, also in pkt-line format
+        post_data = b""
+        post_data += self._create_pkt_line(f"want {head_sha}\n")
+        post_data += self._create_pkt_line(None, flush=True) # Flush packet
+        post_data += self._create_pkt_line("done\n")
+
+        try:
+            # Create a POST request
+            post_req = request.Request(upload_pack_url, data=post_data, headers={
+                'Content-Type': 'application/x-git-upload-pack-request',
+                'Accept': 'application/x-git-upload-pack-result',
+            })
+
+            with request.urlopen(post_req) as response:
+                if response.status != 200:
+                    raise Exception(f"HTTP Error {response.status}: {response.reason}")
+                
+                # This is the binary data of the PACK file
+                pack_file_data = response.read()
+
+        except Exception as e:
+            print(f"fatal: could not fetch PACK file: {e}", file=sys.stderr)
+            sys.exit(1)
+        
+        # --- 5. Process the PACK file (The Hard Part) ---
+        # The response starts with some pkt-lines, then the PACK data.
+        # We need to find the start of the PACK data (which begins with "PACK")
+        
+        # A simple way to skip the pkt-line headers on the PACK file response:
+        # Find the first occurrence of b'PACK'
+        pack_start_index = pack_file_data.find(b'PACK')
+        if pack_start_index == -1:
+            print("fatal: 'PACK' header not found in response", file=sys.stderr)
+            sys.exit(1)
+            
+        # The actual packfile starts at this index
+        binary_pack_data = pack_file_data[pack_start_index:]
+        
+        print("Successfully fetched PACK file.")
+
+        # --- THIS IS YOUR NEXT TASK ---
+        # 1. Parse 'binary_pack_data'
+        #    - Read the PACK header (signature, version, num_objects)
+        # 2. Loop 'num_objects' times
+        #    - Read the object header (type, size)
+        #    - Read the object data (zlib-compressed)
+        # 3. Handle 'delta' objects (OBJ_OFS_DELTA, OBJ_REF_DELTA)
+        #    - This is the most complex part, requiring you to
+        #      reconstruct objects from a base object and a diff.
+        # 4. Write the reconstructed, full objects to your
+        #    .git/objects directory using the same logic as _write_blob
+        #    (but be careful, don't re-compress!)
+        #
+        # After all objects are saved:
+        # 5. Create/Update '.git/refs/heads/main' (or master)
+        #    with the 'head_sha'
+        # 6. Update '.git/HEAD' to point to your new branch ref
+        # 7. Checkout the files (read the commit, then the tree,
+        #    then the blobs, and write them to the working directory)
+        
+        # For now, we will just stop.
+        print(f"Next step: Parse the {len(binary_pack_data)} byte PACK file.")
+        
         
 
     # -------- HELPER FUNCTIONS --------
@@ -348,7 +432,7 @@ class Git:
         sha1_of_file = self._compute_sha1_hash(file_content_with_header)
 
         if not write_to_disk:
-            return
+            return sha1_of_file # Return SHA even if not writing
         
         compressed_data = zlib.compress(file_content_with_header) 
         # making dir in object using the hash result
@@ -366,6 +450,59 @@ class Git:
 
         return sha1_of_file
 
+    # 4. Create a pkt-line
+    def _create_pkt_line(self, data_str: str, flush: bool = False) -> bytes:
+        """
+        Encodes a string into the pkt-line format.
+        """
+        if flush:
+            return b'0000'
+        
+        data_bytes = data_str.encode('utf-8')
+        length = len(data_bytes) + 4 # +4 for the hex length prefix
+        
+        # Format length as 4-digit hex
+        hex_length = f"{length:04x}"
+        
+        return hex_length.encode('utf-8') + data_bytes
+
+    # 5. Parse a pkt-line response
+    def _parse_pkt_lines(self, response_bytes: bytes):
+        """
+        Parses the pkt-line formatted response from info/refs.
+        """
+        refs = {}
+        capabilities = []
+        i = 0
+        
+        while i < len(response_bytes):
+            # Read the 4-byte hex length prefix
+            hex_length = response_bytes[i:i+4].decode('utf-8')
+            if hex_length == '0000':
+                i += 4
+                break # Flush packet, end of refs
+            
+            length = int(hex_length, 16)
+            
+            # Get the line content (length - 4 bytes for the prefix)
+            line_content = response_bytes[i+4 : i+length]
+            line_str = line_content.decode('utf-8').strip() #.strip() to remove trailing newline
+            
+            i += length # Move to the next line
+            
+            # The first line contains capabilities
+            if i == length: # First line
+                sha, ref_name_with_caps = line_str.split(' ', 1)
+                ref_name, caps_str = ref_name_with_caps.split('\x00')
+                refs[ref_name] = sha
+                capabilities = caps_str.split(' ')
+            else:
+                # Subsequent lines are just 'sha ref_name'
+                if line_str: # avoid processing empty lines
+                    sha, ref_name = line_str.split(' ', 1)
+                    refs[ref_name] = sha
+                    
+        return refs, capabilities
 
 
 
@@ -373,6 +510,8 @@ class Git:
 
 def main():
 
+    # We must initialize Git() *before* parsing, so we can
+    # potentially change the git_dir inside the 'clone' command.
     git = Git()
 
     # --------- ADDING A PARSER ---------
