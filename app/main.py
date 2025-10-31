@@ -158,7 +158,7 @@ class Git:
 
             if not filtered_contents:
                 # empty directory
-                tree_object = b'tree 0\x0S\x00'
+                tree_object = b'tree 0\x00'
                 return self._compute_sha1_hash(tree_object)
 
             for object in filtered_contents:
