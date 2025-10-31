@@ -5,6 +5,8 @@ import hashlib
 import time
 import datetime
 import argparse
+import requests
+import re
 
 class Git:
     # hard coding - reusability - ALL_CAPS - convention variable name
@@ -257,6 +259,48 @@ class Git:
 
         print(sha_of_commit_object)
 
+    
+    # -- 7. Subcommand - git clone <github-repo-https> <dir-to-clone-to>
+    def clone(self, args):
+        repo_url = args.repo_address
+        directory_name = args.directory_name
+
+        try:
+            if not os.path.exists(directory_name):
+                os.makedirs(directory_name)
+            elif not os.path.isdir(directory_name):
+                print(f"fatal: '{directory_name}' exists but is not a directory.", file=sys.stderr)
+                sys.exit(1)
+            elif os.listdir(directory_name):
+                 print(f"fatal: '{directory_name}' exists and is not empty.", file=sys.stderr)
+                 sys.exit(1)
+
+            os.chdir(directory_name)
+
+            self.init(args) 
+            print(f"Initialized empty Git repository in {os.getcwd()}/.git/")
+
+        except Exception as e:
+            print(f"Error creating directory or initializing repo: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Cloning into '{directory_name}'...")
+
+        ref_discovery_url = f"{repo_url.rstrip('/')}/info/refs?service=git-upload-pack"
+
+        try:
+            response = requests.get(ref_discovery_url)
+            response.raise_for_status() # Fail on 4xx/5xx errors
+
+            print("--- REF DISCOVERY RESPONSE ---")
+            print(response.text)
+            print("------------------------------")
+            print("Ref discovery successful. (Partial implementation)")
+
+
+        except requests.exceptions.RequestException as e:
+            print(f"fatal: could not read from remote repository: {e}", file=sys.stderr)
+            sys.exit(1)
         
 
     # -------- HELPER FUNCTIONS --------
@@ -397,7 +441,13 @@ def main():
 
     commit_tree_parser.set_defaults(func= git.commit_tree)
 
-    # -- 7. Subcommand -  --
+    # -- 7. Subcommand - git clone <github repo address> <directory name> --
+    clone_parser = subparsers.add_parser("clone", help="Cloning a public repository from Github")
+
+    clone_parser.add_argument("repo_address", type=str, help="The URL or path to the repo to clone")
+    clone_parser.add_argument("directory_name", type=str, help="The path to the directory to clone into")
+
+    clone_parser.set_defaults(func=git.clone)
 
 
 
