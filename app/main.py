@@ -154,7 +154,7 @@ class Git:
             if not filtered_contents:
                 # empty directory
                 tree_object = b'tree 0\x00'
-                return self._compute_sha1_hash(tree_object)
+                return self._write_object(tree_object)
 
             for object in filtered_contents:
                 object_path = os.path.join(directory_path, object)
@@ -181,16 +181,7 @@ class Git:
             size_of_tree_object = len(tree_entries_str)
             tree_object = b'tree ' + str(size_of_tree_object).encode('ascii') + b'\x00' + tree_entries_str
 
-            tree_sha = self._compute_sha1_hash(tree_object)
-
-            path_to_tree_object = self._object_path(tree_sha, make_dir=True)
-
-            try:
-                with open(path_to_tree_object, 'wb') as f:
-                    f.write(zlib.compress(tree_object))
-            except Exception as e:
-                print(f"Error writing tree object: {e}", file=sys.stderr)
-                sys.exit(1)
+            tree_sha = self._write_object(tree_object)
 
             if dir_path == '.':
                 print(tree_sha)
@@ -242,15 +233,7 @@ class Git:
             b'commit ' + str(len(commit_content_bytes)).encode('ascii') + b'\x00' + commit_content_bytes
         )
 
-        sha_of_commit_object = self._compute_sha1_hash(commit_object_content)
-        path_of_commit_object = self._object_path(sha_of_commit_object, make_dir=True)
-
-        try:
-            with open(path_of_commit_object, 'wb') as f:
-                f.write(zlib.compress(commit_object_content))
-        except Exception as e:
-            print(f"Error writing to commit object: {e}", file=sys.stderr)
-            sys.exit(1)
+        sha_of_commit_object = self._write_object(commit_object_content)
 
         print(sha_of_commit_object)
 
@@ -301,29 +284,37 @@ class Git:
         file_content_size = len(file_content_bytes)
         header_bytes = f"blob {file_content_size}\x00".encode('ascii')
         file_content_with_header = header_bytes + file_content_bytes
-        sha1_of_file = self._compute_sha1_hash(file_content_with_header)
 
-        if not write_to_disk:
-            return sha1_of_file
-        
-        compressed_data = zlib.compress(file_content_with_header)
-        path_new_object = self._object_path(sha1_of_file, make_dir=True)
+        if write_to_disk:
+            return self._write_object(file_content_with_header)
 
-        # writing to the hash defined path
-        try:
-            with open(path_new_object, 'wb') as f:
-                f.write(compressed_data)
-        except Exception as e:
-            print(f"Error while writing to file: {e}", file=sys.stderr)
-            sys.exit(1)
+        return self._compute_sha1_hash(file_content_with_header)
 
-        return sha1_of_file
-
+    # helper method for -> finding object path -> making dir if required -> returning path
     def _object_path(self, sha, make_dir=False):
         path_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha[:2])
         if make_dir:
             os.makedirs(path_dir, exist_ok=True)
         return os.path.join(path_dir, sha[2:])
+
+    # helper fucntion for: computing sha1 hash, getb object path via _object_path func, zlib compress the content, writing to the disk, return the hex SHA
+    def _write_object(self, content_with_header: bytes)->str:
+        sha1 = self._compute_sha1_hash(content_with_header)
+        path_new_object = self._object_path(sha1, make_dir=True)
+
+        if os.path.exists(path_new_object):
+            return sha1
+
+        compressed_data = zlib.compress(content_with_header)
+        try:
+            with open(path_new_object, 'wb') as f:
+                f.write(compressed_data)
+        except Exception as e:
+            print(f"Error while writing to file : {e}", file=sys.stderr)
+            sys.exit(1)
+
+        return sha1
+
 
 
 
