@@ -36,15 +36,15 @@ class Git:
 
     # -- 2. COMMAND : git cat-file <flag> <hash-of-the-file> --
     def cat_file(self, args): 
-        hash_str = args.object_hash
-        object_path = os.path.join(self.git_dir, Git.OBJECTS_DIR, hash_str[:2], hash_str[2:]) # the object associated with the given hash
+        sha = args.object_hash
+        object_path = self._object_path(sha) # the object associated with the given hash
         
         # Need content of file at the path - zlib decompression
         content = self._get_object_content(object_path)
 
         # Content format - <object-type>\x20<size>\x00<content>
         if content is None:
-            print(f"fatal: Not a valid object name {hash_str}", file=sys.stderr)
+            print(f"fatal: Not a valid object name {sha}", file=sys.stderr)
             sys.exit(1)
 
         header, _ , body = content.partition(b'\x00')
@@ -76,7 +76,7 @@ class Git:
 
         # given sha - we know path - decompress - work on --name-only - parse the names 
         hash_of_tree_object = args.tree_hash
-        path_to_tree_object = os.path.join(self.git_dir, Git.OBJECTS_DIR, hash_of_tree_object[:2], hash_of_tree_object[2:])
+        path_to_tree_object = self._object_path(hash_of_tree_object)
         content_of_tree_object = self._get_object_content(path_to_tree_object)
 
         if content_of_tree_object is None:
@@ -120,9 +120,9 @@ class Git:
 
             else:
                 mode_str = mode.decode('ascii')
-                if mode_str == '100644' or mode_str == '100755' or mode_str == '1200000' or mode_str == '160000':
+                if mode_str == '100644' or mode_str == '100755' or mode_str == '120000' or mode_str == '160000':
                     type = 'blob'
-                elif mode_str == '040000':
+                elif mode_str == '40000':
                     type = 'tree'
                 else:
                     type = 'unknown' # cases of symlinks and other cases
@@ -183,10 +183,7 @@ class Git:
 
             tree_sha = self._compute_sha1_hash(tree_object)
 
-            path_to_tree_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, tree_sha[:2])
-            os.makedirs(path_to_tree_dir, exist_ok=True)
-
-            path_to_tree_object = os.path.join(path_to_tree_dir, tree_sha[2:])
+            path_to_tree_object = self._object_path(tree_sha, make_dir=True)
 
             try:
                 with open(path_to_tree_object, 'wb') as f:
@@ -246,9 +243,7 @@ class Git:
         )
 
         sha_of_commit_object = self._compute_sha1_hash(commit_object_content)
-        path_to_commit_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha_of_commit_object[0:2])
-        os.makedirs(path_to_commit_dir, exist_ok=True)
-        path_of_commit_object = os.path.join(path_to_commit_dir, sha_of_commit_object[2:])
+        path_of_commit_object = self._object_path(sha_of_commit_object, make_dir=True)
 
         try:
             with open(path_of_commit_object, 'wb') as f:
@@ -279,7 +274,7 @@ class Git:
                 compressed_data = f.read()
             return zlib.decompress(compressed_data)
 
-        except (zlib.error, Exception):
+        except (zlib.error, OSError):
             return None
         
 
@@ -309,15 +304,12 @@ class Git:
         sha1_of_file = self._compute_sha1_hash(file_content_with_header)
 
         if not write_to_disk:
-            return
+            return sha1_of_file
         
-        compressed_data = zlib.compress(file_content_with_header) 
-        # making dir in object using the hash result
-        path_new_object_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR , sha1_of_file[:2])
-        os.makedirs(path_new_object_dir, exist_ok=True)
+        compressed_data = zlib.compress(file_content_with_header)
+        path_new_object = self._object_path(sha1_of_file, make_dir=True)
 
         # writing to the hash defined path
-        path_new_object = os.path.join(path_new_object_dir, sha1_of_file[2:])
         try:
             with open(path_new_object, 'wb') as f:
                 f.write(compressed_data)
@@ -327,6 +319,11 @@ class Git:
 
         return sha1_of_file
 
+    def _object_path(self, sha, make_dir=False):
+        path_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha[:2])
+        if make_dir:
+            os.makedirs(path_dir, exist_ok=True)
+        return os.path.join(path_dir, sha[2:])
 
 
 
