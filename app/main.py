@@ -572,7 +572,7 @@ class Git:
 
     # 18. after all objects are written, we are poiting this new repo's main branch at the commit we cloned
     def _write_refs_and_head(self, target_dir: str, commit_sha: str) :
-        refs_path = os.path.join(target_dir, self.git_dir, self.REFS_DIR, self.HEADS_DIR, 'main')
+        refs_path = os.path.join(self.git_dir, self.REFS_DIR, self.HEADS_DIR, 'main')
         with open(refs_path, 'w') as f:
             f.write(commit_sha + '\n')
         # HEAD already points to "ref: refs/heads/main" from intit() - nothign to do there
