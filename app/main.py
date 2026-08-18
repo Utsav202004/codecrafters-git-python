@@ -472,7 +472,7 @@ class Git:
             obj_start = offset
             obj_type, size, offset = self._read_object_header(pack_bytes, offset)
 
-            if obj_type == self.OBJ_REF_DELTA:
+            if obj_type == self.OBJ_OFS_DELTA:
                 back_distance, offset = self._read_ofs_delta_offset(pack_bytes, offset)
                 base_offset = obj_start - back_distance # where the base object started
                 delta_content, offset = self._decompress_object(pack_bytes, offset) # decompressing the diff instruction
