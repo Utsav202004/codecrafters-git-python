@@ -7,6 +7,8 @@ import hashlib
 import time
 import datetime
 import argparse
+import urllib.request
+import struct
 
 class Git:
     # hard coding - reusability - ALL_CAPS - convention variable name
@@ -14,6 +16,13 @@ class Git:
     REFS_DIR = 'refs'
     HEAD_FILE = 'HEAD'
     HEADS_DIR = 'heads'
+
+    OBJ_COMMIT = 1
+    OBJ_TREE = 2
+    OBJ_BLOB = 3
+    OBJ_TAG = 4
+    OBJ_OFS_DELTA = 6 
+    OBJ_REF_DELTA = 7
 
     def __init__(self, git_dir = '.git'):
         self.git_dir = git_dir
@@ -106,9 +115,7 @@ class Git:
             filename_start = space_index + 1
             null_index = tree_entries.find(b'\x00', space_index)
             if null_index == -1 : break # not a valid tree
-            filename_end = null_index - 1
-
-            filename = tree_entries[filename_start: filename_end + 1]
+            filename = tree_entries[filename_start: null_index]
 
             # third component - sha1 hash
             sha1_start = null_index + 1
@@ -240,9 +247,49 @@ class Git:
     
     # -- 7. Subcommand - git clone <github-repo-https> <dir-to-clone-to>
     def clone(self, args):
-        
-        pass
+        repo_url = args.repo_address
+        target_dir = args.directory_name
 
+        os.makedirs(target_dir, exist_ok=True) # creating a target clone folder
+        self.git_dir = os.path.join(target_dir, '.git') # redirecting all object writes to new clone git 
+        self.init(args)
+
+        # GET request to get refs
+        data = self._discover_refs(repo_url)
+        lines = self._parse_pkt_lines(data)
+
+        # for testing
+        # for line in lines: 
+        #     print(line)
+
+        # Extracting the SHA of head commit - eg main branch
+        head_commit_sha = self._get_head_commit_sha(lines)
+
+        # Asking for PACK data using POST request and head commit sha
+        pack_data = self._request_pack(repo_url, head_commit_sha.encode('ascii'))
+
+        # extracting pack bytes - pack_data = pkt line + pack bytes
+        pack_bytes = self._extract_pack_bytes(pack_data)
+
+        version, object_count = self._parse_pack_header(pack_bytes)
+
+        # testing
+        # print(f"version={version}, obj_count={object_count}")
+
+        self._parse_pack_objects(pack_bytes, object_count)
+
+        self._write_refs_and_head(target_dir, head_commit_sha)
+
+        # finding the tree this commit points to, by reading the commit object we just wrote
+        commit_content = self._get_object_content(self._object_path(head_commit_sha))
+        _, _, commit_body = commit_content.partition(b'\x00')
+        first_line = commit_body.split(b'\n')[0]
+        root_tree_sha = first_line.split(b' ')[1].decode('ascii')
+
+        self._checkout_tree(root_tree_sha, target_dir)
+
+        print(f"Cloned into : {target_dir}")
+    # finishhhhhhhhhhhhh
         
 
     # -------- HELPER FUNCTIONS --------
@@ -290,14 +337,14 @@ class Git:
 
         return self._compute_sha1_hash(file_content_with_header)
 
-    # helper method for -> finding object path -> making dir if required -> returning path
+    # 4. finding object path -> making dir if required -> returning path
     def _object_path(self, sha, make_dir=False):
         path_dir = os.path.join(self.git_dir, Git.OBJECTS_DIR, sha[:2])
         if make_dir:
             os.makedirs(path_dir, exist_ok=True)
         return os.path.join(path_dir, sha[2:])
 
-    # helper fucntion for: computing sha1 hash, getb object path via _object_path func, zlib compress the content, writing to the disk, return the hex SHA
+    # 5. computing sha1 hash, getb object path via _object_path func, zlib compress the content, writing to the disk, return the hex SHA
     def _write_object(self, content_with_header: bytes)->str:
         sha1 = self._compute_sha1_hash(content_with_header)
         path_new_object = self._object_path(sha1, make_dir=True)
@@ -314,6 +361,255 @@ class Git:
             sys.exit(1)
 
         return sha1
+
+    # 6. Sending GET request for git clone implemetation - get pkt line response
+    def _discover_refs(self, repo_url):
+        url = f"{repo_url}/info/refs?service=git-upload-pack"
+        req = urllib.request.Request(url, headers={'User-Agent': 'git/2.0.0'})
+        with urllib.request.urlopen(req) as response:
+            return response.read()
+
+    # 7. packet line parser
+    def _parse_pkt_lines(self, data: bytes):
+        lines = []
+        i = 0
+        while i < len(data):
+            length_hex = data[i:i+4]
+            length = int(length_hex, 16)
+
+            if length == 0: # flush packet found
+                i += 4
+                continue
+
+            line  = data[i+4 : i+length]
+            lines.append(line)
+            i += length
+
+        return lines
+
+    # 8. Parsing pkt line from get request to get head commit sha
+    def _get_head_commit_sha(self, lines)->str :
+        sha, _ , refs = lines[1].partition(b'\x20')
+        return sha.decode('ascii')
+
+    # 9. requesting the pack using head commit sha
+    def _request_pack(self, repo_url, want_sha: bytes)->bytes:
+        want_line = self._build_pkt_line(b"want " + want_sha + b"\n")
+        flush = b"0000"
+        done_line = self._build_pkt_line(b"done\n")
+
+        body = want_line + flush + done_line
+
+        url = f"{repo_url}/git-upload-pack"
+        req = urllib.request.Request(
+            url, 
+            data=body,
+            headers={
+                'User-Agent': 'git/2.0.0',
+                'Content-Type': 'application/x-git-upload-pack-request',
+                'Accept': 'application/x-git-upload-pack-result',
+            }
+        )
+        with urllib.request.urlopen(req) as response:
+            return response.read()
+
+
+    # 10. building a pkt line - reverse of parsing
+    def _build_pkt_line(self, content:bytes)->bytes:
+        length = len(content) + 4
+        return f"{length:04x}".encode('ascii') + content
+
+    # 11. Extract pack data, excluding the pkt line from the POST request
+    def _extract_pack_bytes(self, pack_data: bytes)->bytes:
+        pack_start = pack_data.find(b'PACK')
+        return pack_data[pack_start:]
+
+    # 12. PACK has a conatining version and object number
+    def _parse_pack_header(self, pack_bytes: bytes):
+        magic = pack_bytes[0:4]
+        version = struct.unpack('>I', pack_bytes[4:8])[0] # 4 byte version field
+        object_count = struct.unpack('>I', pack_bytes[8:12])[0]
+        return version, object_count
+
+    # 13. Moving to objects of PACK - parsing the object header - lovely bit manipulation 
+    def _read_object_header(self, pack_data: bytes, offset: int):
+        # we need to traverse byte by byte now
+        byte = pack_data[offset]
+        obj_type = (byte >> 4) & 0x7    # buts 6-4
+        size = byte & 0xF               # bits 3-0
+        shift = 4
+        offset += 1
+
+        while byte & 0x80:              # bit 7 set -> more byte parsing
+            byte = pack_data[offset]
+            size |= (byte & 0x7F) << shift
+            shift += 7
+            offset += 1
+
+        return obj_type, size, offset
+
+    # 14. Decompressing the data after parsing the object header
+    def _decompress_object(self, pack_data:bytes, offset: int):
+        decompressor = zlib.decompressobj()
+        decompressed = decompressor.decompress(pack_data[offset: ])
+        consumed = len(pack_data[offset:]) - len(decompressor.unused_data)
+        return decompressed, offset + consumed
+
+    # 15. this will used the above two function to parse the objects of PACK
+    def _parse_pack_objects(self, pack_bytes: bytes, object_count: int):
+        offset = 12 # skipping past "PACK" + version (4) + object_count(4)
+
+        type_names = {
+            self.OBJ_COMMIT: "commit",
+            self.OBJ_TREE: "tree",
+            self.OBJ_BLOB: "blob",
+        }
+
+        resolved = {} # offset where object started
+
+        # we will traverse each object one by one
+        for _ in range(object_count):
+            obj_start = offset
+            obj_type, size, offset = self._read_object_header(pack_bytes, offset)
+
+            if obj_type == self.OBJ_REF_DELTA:
+                back_distance, offset = self._read_ofs_delta_offset(pack_bytes, offset)
+                base_offset = obj_start - back_distance # where the base object started
+                delta_content, offset = self._decompress_object(pack_bytes, offset) # decompressing the diff instruction
+
+                base_type, base_content = resolved[base_offset]
+                content = self._apply_delta(base_content, delta_content) # reconstructing a real contetn
+
+                resolved[obj_start] = (base_type, content) # delta inherits its base type
+                type_name = type_names[base_type]
+                header = f"{type_name} {len(content)}\x00".encode('ascii')
+                self._write_object(header + content) # writing to the disk
+                continue
+
+            if obj_type == self.OBJ_REF_DELTA: # base identified by full 20 bytes sha and not offset
+                print("Skipping REF Delta for now")
+                offset += 20 # the 20 bytes SGA
+                _, offset = self._decompress_object(pack_bytes, offset)
+                continue
+
+            content, offset = self._decompress_object(pack_bytes, offset)
+
+            # note that the decompressed data does not have the header of an usual object so we need to add that now
+            resolved[obj_start] = (obj_type, content)
+
+            type_name = type_names[obj_type]
+            header = f"{type_name} {len(content)}\x00".encode('ascii')
+            full_object = header + content
+
+            self._write_object(full_object)
+
+    # 16. Reading OFS delta offset
+    def _read_ofs_delta_offset(self, pack_data:bytes, offset: int):
+        byte = pack_data[offset]
+        result = byte & 0x7F
+        offset += 1
+        while byte & 0x80:
+            byte = pack_data[offset]
+            result += 1 # this is git spec quirk, only for this field
+            result = (result << 7) | (byte & 0x7F)
+            offset += 1
+        return result, offset
+
+    # 17. Applying the delta instructions, here delta is the decompressed stream of instructions - copy from base or insert new bytes; while base is the already resolved content this delta is a diff against
+    def _apply_delta(self, base:bytes, delta:bytes)->bytes:
+        pos = 0
+
+        # local helper to read the 7bit per byte varint
+        def read_varint():
+            nonlocal pos
+            result = 0
+            shift = 0
+            while True:
+                byte = delta[pos]
+                pos += 1
+                result |= (byte & 0x7F) << shift
+                shift += 7
+                if not (byte & 0x80):
+                    break
+            return result
+
+        base_size = read_varint() # for check, not used later
+        result_size = read_varint() # exopected final reconstructed size
+
+        result = bytearray() # will build the reconstructed object content here
+        while pos < len(delta):
+            byte = delta[pos]
+            pos += 1
+
+            if byte & 0x80:
+                # copy instruc - the msb flag is set, which say copy from base, but the rest 7 bits are also flags and not data, each flag says whether a correpsonding offset/size byte is present next
+                copy_offset = 0
+                copy_size = 0 
+
+                for i in range(4): # bits 0 se 3 of instruction byte - will tell aboutb upto 4 offset bytes
+                    if byte & (1 << i):
+                        copy_offset |= delta[pos] << (8 * i)
+                        pos += 1
+
+                for i in range(3):  # bits 4 se 6 of instruction byte - will tell aboutb upto 3 size bytes
+                    if byte & (1 << (4 + i)):
+                        copy_size |= delta[pos] << (8 * i)
+                        pos += 1
+
+                if copy_size == 0: # scepific special case size 0 means 65536
+                    copy_size = 0x10000
+
+                result += base[copy_offset:copy_offset + copy_size]
+
+            else:
+                # insert instruct - new literal bytes and not from the base
+                # incstruct byte own value is the length (max 127 as the top bit is 0)
+                insert_size = byte
+                result += delta[pos : pos + insert_size]
+                pos += insert_size
+
+        return bytes(result) # reconstructed object content
+
+    # 18. after all objects are written, we are poiting this new repo's main branch at the commit we cloned
+    def _write_refs_and_head(self, target_dir: str, commit_sha: str) :
+        refs_path = os.path.join(target_dir, self.git_dir, self.REFS_DIR, self.HEADS_DIR, 'main')
+        with open(refs_path, 'w') as f:
+            f.write(commit_sha + '\n')
+        # HEAD already points to "ref: refs/heads/main" from intit() - nothign to do there
+
+    # 19. Walks a tree object and write real files to disk - reverse of write_tree
+    def _checkout_tree(self, tree_sha: str, target_dir: str):
+        tree_path = self._object_path(tree_sha)
+        content = self._get_object_content(tree_path)
+        header, _, body = content.partition(b'\x00')
+
+        i = 0
+        while i < len(body):
+            space_ind = body.find(b'\x20', i)
+            mode = body[i:space_ind]
+            null_ind = body.find(b'\x00', space_ind)
+            file_name = body[space_ind + 1 : null_ind].decode('utf-8')
+            sha1_bytes = body[null_ind + 1 : null_ind + 21]
+            sha1_hex = sha1_bytes.hex()
+
+            full_path = os.path.join(target_dir, file_name)
+
+            if mode == b'40000': # subtree, unleash the beauty of recursion
+                os.makedirs(full_path, exist_ok=True)
+                self._checkout_tree(sha1_hex, full_path)
+
+            else: # its a blob- decompress and write real content to the disk
+                blob_path = self._object_path(sha1_hex)
+                blob_content = self._get_object_content(blob_path)
+                _, _, file_body  = blob_content.partition(b'\x00')
+                with open(full_path, 'wb') as f:
+                    f.write(file_body)
+
+            i = null_ind + 21
+
+                
+
+
 
 
 
