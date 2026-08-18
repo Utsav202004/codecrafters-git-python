@@ -5,7 +5,6 @@ import os
 import zlib
 import hashlib
 import time
-import datetime
 import argparse
 import urllib.request
 import struct
@@ -606,12 +605,6 @@ class Git:
                     f.write(file_body)
 
             i = null_ind + 21
-
-                
-
-
-
-
 
 
 # -------- MAIN ---------
