@@ -1,0 +1,373 @@
+These are the notes for Revision for Git project (made in 2025 last year) for my Interview sessions
+
+STAGE 1 : Initialise the .git directory
+    WE DO : on command 'git init'
+        * we create a '.git' directory
+        * create '.git/objects', '.git/refs/head' directories
+        * create '.git/HEAD' pointer to a pointer
+
+    * All the data for the git repo, from its commit history to its configuration lives inside this hidden folder ".git".
+    * It is created with the "git init" command
+    * 'sys' and 'os' are python's standard libraries, come bundled with every python install 
+    * os talks to the operaring system: file paths, directory, env variables
+    * 'sys' talks to the python interpreter/runtime itself
+    * 'os' split the commands line into list of separate strings, hands it over to the python interpreter
+    * sys.argv[] is the list that is already created and populated with the of interpreter which was helped by the 'os'
+
+    * We make directories using os.mkdir -> '.git', '.git/objects', '.git/refs'
+
+    * '.git/objects'  - everything in git is object - a blob(file content), a tree(a folder snapshot) and a commit - they get stored here as a SHA-1-named object
+    * '.git/refs' - this are pointers and not data, 'refs/heads/<branch> holds the commit SHA that a branch currently points to - file containing the 40-char hash
+    * '.git/HEAD' - a pointer to a pointer, containfs a line lije 'ref: refs/heads/main'
+
+    * '__name__' every python file has this built in variable, if the file is run directly, it is set to '__main__', so that the functions can run; otherwise it means it has been imported, so the funcitons in the files are called to be used later
+
+----------------------------------------------------------------------------
+
+STAGE 2 : Read a blob object
+    WE DO : on command 'git cat-file -p <hash40>'
+        * Made a git class, a more structured way to handle
+        * use of os.path.join -  a more clean and better way for bigger code base
+        * safety checks like 'exist_ok' added
+
+        *  parses the arguments - define object path using the hash, check for flag, sent for zlib decoompression in a separate function
+        * the decoompression has a header which also needs to be separate from the content
+        * added new try, except system : for better error and crash handling
+        * "except EXCEPTION" cathces everything
+
+        * Python leans towards "EAFP" - Easier to ask Forgiveness than Permission
+
+        * use partition to separate the header from the actual content
+        * then decode it using utf-8
+        * NOTE :  cat file does not end with a new line but print staement does by default, we need to mention end = ''
+
+    * blob is the git's way to storing the file content, no filename no permissions, just the raw bytes of the files content
+    * git is content addressed - it does not care what a file is called or where a file is stored - but only what's inside it
+    * if two files in our project with different name and different address but exactly the same content, then they have the exact same blob file, both the filenmaes will just point to it
+
+    * How a blob is created  - take the raw file content - "i am Utsav" -> prefix it with a header -> "blob" + <size in bytes> + "\0" -> "blob10\0i am utsav".
+    * SHA-1 hash this entire string -> 40 char hex hash -> blob's id
+    * zlib compress the whole string -> import zlib
+    * save it to the disk at ".git/objects/<first 2 char of SHA-1 hash>/<last 38 char>
+    * So a blob identity is its hash, and its hash is a fingerprint of its entire content(also the small header)
+    * even a smallest change - a new sha1 - a new blob object
+
+    * NOTE : why store the <size in bytes> instead of just pure content -> now the pure content can have literal null bytes which are meant to be of the data, but when reading the content, the reader might get confuse, so this is a defined boundary for till when the file must be read
+
+    * NOTE :  why store in a folder with <first 2 hash char> and not directly in the object folder - filesystems become noticeably slow when file number increase, hashing is a very random and evenly distributed function - 2 hex characters can create 256 subfolders - Method called SHARDING/BUCKETING
+
+    * SHA-1 (secure hash algo 1) -> takes anything - a byte, a sentence, a file -> convert to fix size 160 bit -> 20 bytes -> a 40 hex characters. Deterministic-> same input == same hash
+    * This is not an encryption -> cannot convert back
+
+    * Zlib compression -  General purpose lossless compression algoritm - puerly for space optimisation
+
+    * Plumbing commands - these are git's low level, internal building-block commands - raw primitives that operate directly on the object database
+    * It is opposite to the porcelain command that we use on a daily basis like git init git push git commit
+    * hash-object : plumbing command to create a blob from a file and get its hash
+    * cat-file : read back an object's raw content, cat means catalog (read the type, size and raw content) -p means pretty print -  just print the content in a readable way 
+    * similar are write-tree and commit-tree - plumbing commands
+
+    * partition is safer considering .index and .split both, as .split may split on null characyter present in the actual content
+    * decode to convert raw bytes(recoeved from zlib decoompression) into human readable python strings
+
+
+----------------------------------------------------------------------------
+
+STAGE 3 : Create a blob object
+    WE DO : on command 'git hash-object -w <file-name>'
+        * Changes to previous code - hard coded some names for reusubility - OBJECTS_DIR, REFS_CIR, HEADS_DIR
+        * all caps is python convetion for varaible names in a class
+
+        * We calculate the SHA1 hash of the given new object and if '-w' flag is provided, we also write it as a new blob according the rules for the same
+
+    * '-w' flag is used to write the blob object after finding the hash
+    * We will need to read the file -> add header to the file -> calculate the sha1 -> compress the file using zlib -> write the blob to the objects firectory
+    * Read the file in binary mode, after checking if the file even exist
+    * check the len(file read just above)
+    * create a header in bytes by ecoding a f string directly
+    * calculate the sha1 of the file
+    * For this a separate function, create an object of the hashlib class library, use the update function of this object and give the input bytes
+    * Now compress the data using zlib.compress functions
+    * Note to always calculate the SHA1 hash of the original data with header and not the zlib compressed data, they are two very separate stufffff
+    * Now make a new folder first if it does not exist using the rules, then create a file using the rest 37 char and write to that file usinf 'with open(file_path, 'wb') as f'
+
+    * NOTE: we used level 9 of zlib compression, which is the highest level of compression, but also takes a lot of time, level is compromise between speed and size, Normal git implementation usually use a level 6 kind of compression, but it is fine here, just a practice project.
+
+----------------------------------------------------------------------------
+
+STAGE 4 ; Read a tree object
+    WE DO: on command 'git ls-tree'
+        * Changes to previous stage: Added a parser, this was a beautiful and exhaustive step, this parsing syntax was pretty confusing
+        * Added more flags (type, size) to 'cat-file' function, this was necessary as objecct can be anything from blob, tree or a commit
+        * a new get object content which works on any type of object
+
+        * this reads the tree object
+        * reading is similar to blob reading, here the body after '\x00' is little different
+        * we were asked to just implement for '--name-only' flag, which print only the name of the files and directories inside this tree, but i have added the case for without this flag
+        
+    * 'ls' stands for list directory contents
+    * tree like blob is also an object, with format like tree <size>\0 <content>
+    * now the content of the tree is what is different from the blob, content has a list of entries each like : <mode><name>\0<sha1 hash 20 bytes not hexa format>, and no delimiter betweem two entries
+    * <mode> is different - ( 40000 for a directory), (100644 for a regular file), (120000 for an executable file), (120000 for a symbolic link)
+    * the names are stored alphabetically
+    * the SHA1 hash here is in bytes format and not hexa, this is important, as the hex code is usually 40 char long, as two hex char are one byte sized, here we simply use the 20 raw bytes
+    * so tree mix plain text (mode, filenmae) with raw binary data (the hash)
+
+    * PARSER - using argparse library - important for me, took me time
+    * Divided into three layers
+        * The Main Parser: represents your whole program
+            * this alone would handle a program with no subcommands, like --help
+            * the description will be displayed on --help
+        * SubParser - for different commands (init, cat-file, hash-object, ls-tree) - parser.add_subparsers
+            * now each of these commands need entirely different subcommands, so new mini sub parsers 
+            * 'dest='command'', after parsing the name of the command get stored in args.command
+            * rewuired true makes it necessary
+            * title - available commands will display the options
+        * SubParser - subparsers.add_parser - defined individually for each command like 'init' 'cat-file' 'ls-tree'
+            * now in this we can create group, a gorup with mutually exclusive flags provided (-p, -t, -s)
+            * The Dispatch trick - set_default(func=git.func()) - the beautiful and the clever part, every subparser is told if you are chosen, remember that this method should handle it, later stored as args.func(args)
+            * args.func(args) call the needed method automatically in the end, no matter what command is chose, so skipping the if else or switch statements
+
+            * action=store_true ?? default is (action=store), this is for storing the accompanying value of the flag, while store_true do not except any another value and just store the flag
+
+    * checking for if the object passed is tree with '.startswith(b'tree ')' for initial checks
+    * parsing the content of tree objects which is tree entries of format - <mode>\x20<filename>\x00<sha1-hash>
+    * here we were asked only to print the object name alphabetically in the tree object entrie, but i have added case without '--name-only' flag
+
+----------------------------------------------------------------------------
+
+STAGE 5 : Write a tree object
+    WE DO: on command 'git write-tree'
+        *
+
+        * Create a tree object from the current state of 'staging area', but we have not yet implemented the staging area, so for simplicity we will assume that all the stuff in the folder is staged
+    
+    * This is the place where staging area is introduced, but for simplicity, we just assume all the files in the working directory are already staged
+    * actually the 'write-tree' command create a tree object from the current state of the "staging area"
+    * Note that as now we need to reuse the write blob thing for multiple flies in the folder, we have created a function
+    * Also note that we need to store the tree entries in alphabetical order of the file/dir name
+    * we need to travel the current directory (path='.')
+    * Also we need to ignore the '.git' directory while traversal, also '.', '..'
+    * we list the contents of dir with 'os.listdir(dir_path)'
+    * we use a clever filter to filter out '.git' - [ name for name in content if name not in ('.git', '.', '..')]
+    * considered the case for an empty directory
+    * will check the contents for file and directory
+    
+    * if file, we need sha1, mode and filename
+    * note that we need bytes and not hex format for tree entries sha, so we will convert hex to bytes
+    * here the separaeted write blob function will come into play
+    * will check for execution permission using os.acess for knowing <mode>
+    * we will append tuple (filename, object), so to sort alphabetically later, into a list named entries
+
+    * if the object is a directory, now is the beautiful part, recursion working seamlessly, the same function will be called to work on the nested directories and so on
+    * We will obtain the sha_hex of the nested directory, now to append, a bery minor but important thing to note is adding '/' to the name of the directory, which should be considered in alphabetical ordering
+    * this took time when i first did this problem
+    * again note to convert hex to byte for tree entry storage
+
+    * simply use entries.sort
+    * make the string from the first index of entry in entries
+    * make the tree object using the above and adding a header to the same
+    * pass to the ready made function of compute sha1_hash
+    * also make new dir in obj according to the git laws and write the tree object there
+    * don;t forget to zlib compress the tree object before writing it there
+
+    * a careful line at the end -> as we will dig into recursion, we do not need to print each dir sha hash, so we did 'if dir_path == '.' '
+
+----------------------------------------------------------------------------
+
+STAGE 6 : Create a commit
+    WE DO: on command 'git commit-tree <tree-sha> -p <parent-sha> -m <message>'
+        * No special changes to the old methods and functions
+        * we make a commit object like we did for blob and tree, the header pattern is same
+        * Format - commit <size>\0<body>
+        * <body> -> tree <tree sha>\n
+                    parent <parent sha>\n
+                    author <name> <<email>> <timestamp> <timezone>\n
+                    commiter <name> <<email>> <timestamp> <timezone>\n\n
+                    <commit message>
+
+        * Now the body will contain pure text and not binary
+        * Each line ends in a new character
+        * The tree and parent shas are in hexadecimal format (40 characters)
+        * There is a blank line before the commit message
+        * The timestamp format is: <seconds_since_epoch> <timezone_offset>
+
+        * Create commit content according to the format -> generate SHA -> compress -> make commit object -> write the compressed data -> print SHA
+
+
+    * Look here each flag has an accompanying value, parent sha for -p and message after -m , so we will use 'action=store' instead of 'action=store_true'
+    
+    * It was asked to hardcode the entire commiter and author line, but i used the original time format
+    * Time format is - <epoch timestamp> + <the timezone_offset>
+    * The Unix epoch is a fixed reference in time - January 1, 1970, 00:00:00 UTC
+    * epoch timestamp stands for seconds elapsed since then
+    * used time.time() for the current time - return epoch in float
+    * typecasted to (int), git does this
+    * The epoch tells when in time this was done, <offset> tells about the local time when it was done, for example UTC+5:30 -> +0530 offset
+    * time.timezone -> my system UTC offset in seconds (non daylight sacing)
+    * We are took in consideration - daylight saving if a system is observing it- using time.altzone, (time.daylight is 0/1 flag)
+    * Also python's time.timezone and altzone are stored backword from the conventional +/- you'd write in a timestamp -> so we flip it back to human and git format
+    * We have taken into consideration first commit, when there is no parent and thus no sha
+    * We also added an empty line before the commit message using ("")
+    * Make a list of all the lines and join them using a "\n"
+    * encode the content using 'utf-8'
+    * Make the object content by adding a header to the above
+    * calculate the sha hash using the defined fucntion, make dir using first two char if not present, write to the path after zlib compression
+    * finally printing the calculated sha of the commit object
+
+    * LEARNING: A commit reference to a tree instead of listing files directly, beacuse:
+        * Deduplication and re-use : A tree object can be reused accross many commits. Even if a small commit is made inside a file, only that file blob changes and the trees along the path. Evry other subtree that was untoucehd is used as it. If commmit embedded file list directly, evrry single commmit would have to relist evry fike in the enture project, massice wasteful Deduplication
+        * Separation of concerns : A tree answers what does the project looks like structurally, a commit answers who, when, why and what came before
+        * Recursive Structure resue
+
+----------------------------------------------------------------------------
+
+Final stagea and the most difficult one
+STAGE 7 : Clone a Repo
+    WE DO: on command 'git clone <repo to clone>':
+        * Now we touching the code from an year ago, i deleted all the newly added code for clone, that used heavy help and now i will do it myself, so while revision, found some issue which i will refactor first, like the mode <04000> and <1200000> were incorrect
+        * also did some refactoring:
+            * error handling in get object function
+            * a new function _object_path because we need to create path for a new object in blob, tree, and commit, and we are doing repetitive work, so lets make a function, this is used in five functions already, so a nice refactoring, special note on how we make sure of not making a new directory (using make_dir) at reading calls like cat_file and ls_tree
+            * a new helper function _write_object added - for the task computing sha1 hash, get object path via new helper, zlib compress, writing to the disk, return the hex SHA. They were separately being done in writing function like write_blob, write tree, commit tree, now a simple function, lovely
+            * Also fix some minor bugs which went unnoticed in the tests earlier
+
+    ** NOTE: As this is very BIG stage and a lot of new things for me, we will break it into smaller chunks.
+
+    PART 1 : REF Discovery - asking a remote server(github) what brances/commit do you have
+
+        * Sending a plain HTTTP GET request to a specific URL - <https://github.com/<user>/<repo>.git/info/refs?service=git-upload-pack>
+        * Note above that it is simple github repo link
+        * <service=git-upload-pack> is just a query parameter telling github that i am here to download/clone/fetch and not for upload/push
+        * git uses same url for both direction clone and push
+        * <git upload pack> can sound confsuing, but this is server perspective, it needs to upload objects(a pack)
+
+        * What comes back - a list sayingn (here are all my branches and tags, and here's the exact commit each one points to)
+            refs/heads/main       → a1b2c3d4...
+            refs/heads/develop    → e5f6a7b8...
+            refs/tags/v1.0        → 9c8d7e6f...
+        * this tells us which branch is main, and which sha commit we should point at once everything is downloaded
+        * the response is respinse object, techincally an http.client.HTTPResponse, it is an open stream
+        * we uuse (.read()) to actually pull the bytes out of the stream
+        * one extra thing, this response has the very first pkt line as an announcement and not ref list, something loike '# service=git-upload-pack' folowed by a flush
+
+        * It is helpful, so the user can select what do it need before transferring or downloading huge amounts of data on to his system
+
+        * The response is wrapped in pkt-line framing (this is different from plain text) because this is the format that is used to carry any kind of data in response, although here we needed plain readbale text, we can later have raw binary bytes too
+        * This (pkt line format) is nothing specifc to ref, its the one wire format the entire protocol reuses everywhere
+
+        * pkt line format - length prefixed framing - 4 hex character length, total byte length of entire line, including prefix
+        * continue this process till you have consumed the whole buffer or hit a '0000' -> flush packet
+
+        * Special attention: Github sometimes reject or behave oddly towards requests that don't identify themselves as real browser/tool, as python does normally. So we are sending a User-Agent that look like a normal git client(git/2.0.0)
+        * so we are avoiding calling urlOpen on a plain string which may get blocked, we are sending in some headers
+        
+        * i tested locally code till this point on my own github repo of this project(haha), it worked loved it
+            b'# service=git-upload-pack\n'
+            b'e635da6b9d89b5b0f64d33b033d291c63df851db HEAD\x00multi_ack thin-pack side-band side-band-64k ofs-delta shallow deepen-since deepen-not deepen-relative no-progress include-tag multi_ack_detailed allow-tip-sha1-in-want allow-reachable-sha1-in-want no-done symref=HEAD:refs/heads/main filter object-format=sha1 agent=git/github-9b2bcc6fabd2-Linux\n'
+            b'e635da6b9d89b5b0f64d33b033d291c63df851db refs/heads/main\n'
+            b'e635da6b9d89b5b0f64d33b033d291c63df851db refs/heads/master\n'
+        * note the \x00 and the space separaeted terms later, these are the "capabilities" which are mentioned once, this is server telling you everything it supports
+        * here one "capability" is of help "symref=HEAD:refs/heads/main", tell us the default branch is main
+
+        * Now we need to extract the head commit sha (the deafult branch - in above example main branch the second or the third line or even the fourth line in the above case)
+        * The very first non announcement (# service...) line is gauranteed to be the HEAD, so we can use this fact for parsing the sha
+
+        * Now as we have asked the server (GET request), what all does this have, and then parsed to the current head, now we will have to make a request of what we want among the options
+        * that request too has to be in pkt line format, so a new helper function to make pkt line format of the stuff we need
+        * format being : <4 hex char size>want <sha>\name
+                         0000
+                         0009done\n
+        * flush bits tell end of our want list, real git supports multiple want lines for multi branch fetches, but here we are making a full single branch clone
+        * done tell no more specification :  real git can have
+        * {length:04x} converts length to lowercase hex, padded to 4 char with leading zeros
+
+        * we send a post request using a differnt helper function, if the req has <data> it automatically becomes a POST request otherwise a GET request. 
+        * we are adding two new headers (content-type) and (accept), tell the server exactly what format you are sendinf and expecting back exactly, git's smart HTTP protocal requires this or will reject the request
+
+        * The response from the POST request is a little different
+            b'0008NAK\nPACK\x00\x00\x00\x02\x00\x00\x01'
+        * a pkt line till word <PACK>
+        * NAK suggest no prior comman ancestor acknowledged - expected for a fresh clone
+        * then no more pkt line framing, just byte content
+        * Next four bytes post PACK are <version number> big endian
+        * Next four bytes - <Object count> - Big endian - the number of our dear <object> in this pack
+
+        * Now we will need to write the new <PACK> file parser, first we need to get rid of the single pkt line before <PACK>
+            "PACK"
+            version 
+            object count
+            <object 1>
+            <object 2>
+            ...
+            <object last>
+            20 byte SHA-1 checksum
+        * We simply use the first PACK occurance, safe for us, in complex cases first all the pkt lines neeeds to be traversed
+
+        * Parsing the header of PACK bytes - we have magic (PACK), version as 4 bytes big endian
+        * use struct.unpack('>I', pack_data[4:8])[0]
+        * '>' for big endian, I for unsigned 4-byte integer
+        * struct.unpack always return a tuple, so [0] for the integer
+
+        * Now the tuff part - per-object headers and variable length encoding
+        * Objext header format - (variable length header - this encodes <type> and <uncompressed size>)
+            * First byte :
+                bit 7 (MSB) - continuation flag
+                Bits 6-4 (3 bits) - type
+                Bits 3-0 (4 bits) - the lowest 4 bits of the size
+            * Each subsequent bit - only if continuation flag is set
+                bit 7 (MSB) - continuation flag again
+                Bits 6-0 (7 bits) = the next chunk of the size, added on top of what you've accumulated so far.
+        * Type values:
+            1 = commit, 2 = tree, 3 = blob, 4 = tag, 6 = OFS_DELTA, 7 = REF_DELTA
+            5 - reserved/unused - ignore for now
+        * Now while parsing the header, we will need to parse byte by byte for info like type and size
+        * will use bit manipulation for the same, interesting
+        
+        * Now this header parsing is crazy, we will start with an offset, will pick the byte at that offset
+        * Now play with bit manipulation
+        * For object type (3 bits) (bits 6-4) (type can be 1-7), do (byte >> 4) & 0111
+        * For size (4 bits) (bits 3 -0) do (byte & 1111)
+        * And the crazy thing about size is these four bits are the lowest significant bits in the actual size bit, this means if the size is greater, then continuation flag will be set, and the 0-6 bits of the next byte will be left shifted and orred with the previous one to get the size, and if the size is even larger, will keep on doing this depending upon the continuation bit
+        * In this process we will keep the track of offset which will changed by one after analying a byte and Size shift which will be +4 for the first bit and +7 for the upcoming bits
+        * this size is of the decompressed data
+        
+        * After all this object header we have the compressed data
+        * Now note that we know the uncompressed size but we have the compressed data now
+        * Will leave this work for the zlib library to figure out, we will provide the entire remaining data
+        * We will create a decompress obj using zlib, will decompress the data, it is differnt than the decompress() we used earlier, it taked more data than needed and ends naturally when the compressed data ends
+        * Will consider if something is left using Decompresser.unused_data
+        * Will change the offset to the start of this unused data
+        * This unused data refers to everything belonging to the next object and beyond 
+        * This finally was one object , crazzyyyyyy 
+
+        * Programming love hex because each hex digit maps exactly 4 bits - highest hex digit is F which is 16 in decimal and 1111 in binary, got it noww, this is the very reason maybe the hex with base 16 was invented, otherwise wht is the logic of a randpm ass number 16
+        * 4 bits is called a nibble
+
+        * Object type not studied yet - (tag, OFS_DELTA, REF_DELTA)
+        * tag — a git object type you haven't built yet; represents an annotated tag (as opposed to a lightweight tag, which is just a ref pointing straight at a commit, no object involved). Rare in a typical repo's pack; you likely won't hit one testing against small repos, but the type code (4) needs to exist so your parser doesn't crash if it appears.
+
+        * We are now making an complete PACK object parser which will use the two previous helper functions made (decompress object and object header parser)
+        * after an offset of 12 "PACK" + version + object_count, the object acually starts
+        * we will for loop for (object_count)
+        * will find object type, size, offset using the header parser helper finction
+        * then we will decompress the data using the decompress helper funcciton
+        * One important piece of info, the decompressed object here does not have the header the ususal git object has, so we will add it according to the info in the header of the object we parsed
+
+        * Now we have worked on the normal objects, blob, tree and commits, now we will work on OFS_DELTA 
+        * for each OFS_DELTA object we need to: (1) read how far back its base object is, (2) find that base (already resolved, sitting in memory), (3) apply the delta's copy/insert instructions against it to reconstruct the real content.
+        * Right after the type+size header you already parse, OFS_DELTA objects have one more variable-length field — the negative offset to the base object — using a similar-but-not-identical continuation-bit encoding
+        * The base object starts result bytes before where the delta object's header began. Since we'll need to know where each object's header started (not just where we are now), we need to track that separately — the main loop needs a small change to remember starting offsets.
+
+        * Applying the delta instructions, parsing the instructions
+        * Every instruction byte's top bit tells us which kind it is — 1 = copy (from base), 0 = insert (new literal bytes follow)
+        * For COPY: the lower 7 bits of that instruction byte are themselves flags — each bit says "is this particular byte of offset/size present, or assumed zero?" — this is another space-saving trick (why send 4+3=7 bytes for offset+size every time, when most deltas only need 1-2). 
+        * For INSERT: dead simple — the byte's value is the length, followed by exactly that many literal bytes to copy in directly.
+
+        * Wiring it into the main loop — this needs restructuring since deltas must resolve after all objects are read (their base might appear later in iteration order isn't guaranteed to be exactly correct... actually OFS_DELTA bases always come earlier in the file by construction, so single-pass mostly works, but let's be safe and do two passes)
+
+
+
+
+
+
